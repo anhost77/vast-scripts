@@ -204,11 +204,12 @@ fi
 
 cd "$LATENTSYNC_DIR"
 
-# Installation des dépendances via requirements.txt (comme dans le script fonctionnel)
+# Installation des dépendances LatentSync
 log_info "Installation des dépendances LatentSync..."
 sed -i 's/mediapipe==0.10.11/mediapipe==0.10.14/' requirements.txt 2>/dev/null || true
-pip install -r requirements.txt --break-system-packages 2>/dev/null || true
-pip install --force-reinstall scikit-image --break-system-packages 2>/dev/null || true
+pip install omegaconf --break-system-packages
+pip install -r requirements.txt --break-system-packages
+pip install --force-reinstall scikit-image --break-system-packages
 
 # Téléchargement des modèles LatentSync
 if [ ! -f "checkpoints/latentsync_unet.pt" ]; then
