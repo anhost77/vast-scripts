@@ -204,27 +204,26 @@ fi
 
 cd "$LATENTSYNC_DIR"
 
-# Installation de TOUTES les dépendances LatentSync avec versions compatibles
+# Installation des dépendances via requirements.txt (comme dans le script fonctionnel)
 log_info "Installation des dépendances LatentSync..."
-pip install -q "diffusers==0.24.0" omegaconf einops accelerate transformers safetensors huggingface_hub --break-system-packages 2>/dev/null || true
-pip install -q -r requirements.txt --break-system-packages 2>/dev/null || true
+sed -i 's/mediapipe==0.10.11/mediapipe==0.10.14/' requirements.txt 2>/dev/null || true
+pip install -r requirements.txt --break-system-packages 2>/dev/null || true
+pip install --force-reinstall scikit-image --break-system-packages 2>/dev/null || true
 
-# Téléchargement des modèles LatentSync (tous les checkpoints nécessaires)
+# Téléchargement des modèles LatentSync
 if [ ! -f "checkpoints/latentsync_unet.pt" ]; then
     log_info "Téléchargement des modèles LatentSync..."
-    mkdir -p checkpoints
     huggingface-cli download ByteDance/LatentSync-1.5 --local-dir checkpoints --quiet 2>/dev/null || {
-        log_warn "HuggingFace CLI échoué, essai avec Python..."
+        log_warn "HuggingFace CLI échoué, essai alternatif..."
         python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='ByteDance/LatentSync-1.5', local_dir='checkpoints')" 2>/dev/null || true
     }
 fi
 
-# Vérification que les modèles sont présents
+# Vérification des modèles
 if [ ! -f "checkpoints/latentsync_unet.pt" ]; then
     log_error "Modèles LatentSync non trouvés, skip LatentSync"
     FINAL_OUTPUT="$SADTALKER_OUTPUT"
 else
-    # Exécution LatentSync
     log_info "Génération du lip-sync avec LatentSync..."
     python -m scripts.inference \
         --unet_config_path "configs/unet/stage2.yaml" \
@@ -243,7 +242,6 @@ else
         FINAL_OUTPUT="$SADTALKER_OUTPUT"
     fi
 fi
-
 # =============================================================================
 # FINALISATION
 # =============================================================================
