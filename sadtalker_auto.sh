@@ -204,9 +204,9 @@ fi
 
 cd "$LATENTSYNC_DIR"
 
-# Installation de TOUTES les dépendances LatentSync
+# Installation de TOUTES les dépendances LatentSync avec versions compatibles
 log_info "Installation des dépendances LatentSync..."
-pip install -q omegaconf einops diffusers accelerate transformers safetensors huggingface_hub --break-system-packages 2>/dev/null || true
+pip install -q "diffusers==0.24.0" omegaconf einops accelerate transformers safetensors huggingface_hub --break-system-packages 2>/dev/null || true
 pip install -q -r requirements.txt --break-system-packages 2>/dev/null || true
 
 # Téléchargement des modèles LatentSync (tous les checkpoints nécessaires)
