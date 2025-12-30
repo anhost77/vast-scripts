@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # SadTalker AUTO - Détection automatique de l'environnement Vast.ai
-# Usage: bash sadtalker_auto.sh <image_url> <audio_url>
+# Usage: bash sadtalker_auto.sh <image_url> <audio_url> <webhook_url> <vast_instance_id> <vast_api_key>
 # =============================================================================
 
 set -e
@@ -25,6 +25,9 @@ WORK_DIR="/workspace/sadtalker"
 OUTPUT_DIR="/workspace/output"
 IMAGE_URL="${1:-}"
 AUDIO_URL="${2:-}"
+WEBHOOK_URL="${3:-}"
+VAST_INSTANCE_ID="${4:-}"
+VAST_API_KEY="${5:-}"
 
 # =============================================================================
 # VÉRIFICATION DES ARGUMENTS
@@ -37,10 +40,10 @@ if [ -z "$IMAGE_URL" ] || [ -z "$AUDIO_URL" ]; then
     echo ""
     log_error "Arguments manquants !"
     echo ""
-    echo "Usage: bash sadtalker_auto.sh <image_url> <audio_url>"
+    echo "Usage: bash sadtalker_auto.sh <image_url> <audio_url> [webhook_url] [vast_instance_id] [vast_api_key]"
     echo ""
     echo "Exemple:"
-    echo "  bash sadtalker_auto.sh https://exemple.com/avatar.png https://exemple.com/audio.mp3"
+    echo "  bash sadtalker_auto.sh https://exemple.com/avatar.png https://exemple.com/audio.mp3 https://n8n.exemple.com/webhook/xxx 12345 apikey123"
     echo ""
     exit 1
 fi
@@ -52,6 +55,8 @@ echo "=========================================="
 echo ""
 log_info "Image: $IMAGE_URL"
 log_info "Audio: $AUDIO_URL"
+[ -n "$WEBHOOK_URL" ] && log_info "Webhook: $WEBHOOK_URL"
+[ -n "$VAST_INSTANCE_ID" ] && log_info "Instance ID: $VAST_INSTANCE_ID"
 echo ""
 
 # =============================================================================
@@ -103,11 +108,9 @@ log_info "Dépendances système installées"
 if [ "$PYTORCH_INSTALLED" = false ]; then
     log_step "Installation de PyTorch..."
     
-    # Installer via pip directement (plus simple que conda pour Vast)
     pip install --upgrade pip -q
     pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 -q
     
-    # Vérifier l'installation
     if python3 -c "import torch; print(torch.__version__)" 2>/dev/null; then
         PYTORCH_VERSION=$(python3 -c "import torch; print(torch.__version__)" 2>/dev/null)
         log_info "✅ PyTorch installé: $PYTORCH_VERSION"
@@ -138,7 +141,6 @@ log_step "Installation des dépendances Python..."
 
 pip install -q --upgrade pip
 
-# Installer les requirements
 pip install -q -r requirements.txt 2>/dev/null || {
     log_warn "Installation standard échouée, installation manuelle..."
     pip install -q numpy scipy pyyaml tqdm imageio imageio-ffmpeg
@@ -146,7 +148,6 @@ pip install -q -r requirements.txt 2>/dev/null || {
     pip install -q kornia yacs pydub
 }
 
-# Dépendances supplémentaires pour l'enhancer
 pip install -q gfpgan basicsr facexlib realesrgan 2>/dev/null || true
 
 log_info "Dépendances Python installées"
@@ -158,17 +159,14 @@ log_step "Téléchargement des modèles pré-entraînés..."
 
 mkdir -p checkpoints
 
-# Essayer le script officiel d'abord
 if [ ! -f "checkpoints/SadTalker_V0.0.2_512.safetensors" ]; then
     log_info "Téléchargement des modèles SadTalker..."
     
-    # Méthode 1: Script officiel
     bash scripts/download_models.sh 2>/dev/null || {
         log_warn "Script officiel échoué, téléchargement direct depuis HuggingFace..."
         
         cd checkpoints
         
-        # Modèles principaux
         [ ! -f "SadTalker_V0.0.2_256.safetensors" ] && \
             wget -q --show-progress -O SadTalker_V0.0.2_256.safetensors \
             "https://huggingface.co/vinthony/SadTalker/resolve/main/SadTalker_V0.0.2_256.safetensors" || true
@@ -185,7 +183,6 @@ if [ ! -f "checkpoints/SadTalker_V0.0.2_512.safetensors" ]; then
             wget -q --show-progress -O mapping_00229-model.pth.tar \
             "https://huggingface.co/vinthony/SadTalker/resolve/main/mapping_00229-model.pth.tar" || true
         
-        # BFM Fitting (nécessaire pour le face reconstruction)
         if [ ! -d "../src/config" ] || [ ! -f "../src/config/BFM_Fitting/01_MorphableModel.mat" ]; then
             wget -q --show-progress -O BFM_Fitting.zip \
                 "https://huggingface.co/vinthony/SadTalker/resolve/main/BFM_Fitting.zip" || true
@@ -198,7 +195,6 @@ else
     log_info "Modèles SadTalker déjà présents"
 fi
 
-# Modèle GFPGAN pour l'amélioration du visage
 mkdir -p gfpgan/weights
 if [ ! -f "gfpgan/weights/GFPGANv1.4.pth" ]; then
     log_info "Téléchargement de GFPGAN..."
@@ -216,16 +212,14 @@ log_step "Téléchargement des fichiers d'entrée..."
 mkdir -p input
 mkdir -p "$OUTPUT_DIR"
 
-# Déterminer les extensions
 IMAGE_EXT="${IMAGE_URL##*.}"
-IMAGE_EXT="${IMAGE_EXT%%\?*}"  # Enlever les paramètres URL
+IMAGE_EXT="${IMAGE_EXT%%\?*}"
 [ -z "$IMAGE_EXT" ] || [ ${#IMAGE_EXT} -gt 4 ] && IMAGE_EXT="png"
 
 AUDIO_EXT="${AUDIO_URL##*.}"
 AUDIO_EXT="${AUDIO_EXT%%\?*}"
 [ -z "$AUDIO_EXT" ] || [ ${#AUDIO_EXT} -gt 4 ] && AUDIO_EXT="wav"
 
-# Télécharger
 log_info "Téléchargement de l'image..."
 wget -q --show-progress -O "input/avatar.$IMAGE_EXT" "$IMAGE_URL" || {
     log_error "Impossible de télécharger l'image"
@@ -238,7 +232,6 @@ wget -q --show-progress -O "input/audio.$AUDIO_EXT" "$AUDIO_URL" || {
     exit 1
 }
 
-# Convertir l'audio en WAV si nécessaire (SadTalker préfère WAV)
 if [ "$AUDIO_EXT" != "wav" ]; then
     log_info "Conversion de l'audio en WAV..."
     ffmpeg -y -i "input/audio.$AUDIO_EXT" -ar 16000 -ac 1 "input/audio.wav" -loglevel quiet
@@ -255,12 +248,6 @@ log_step "=========================================="
 log_step "Génération de la vidéo avec SadTalker..."
 log_step "=========================================="
 echo ""
-
-# Paramètres de génération
-# --still : réduit les mouvements de tête (plus stable)
-# --preprocess crop : recadre automatiquement sur le visage
-# --enhancer gfpgan : améliore la qualité du visage
-# --size 512 : résolution de sortie
 
 python inference.py \
     --driven_audio "input/audio.$AUDIO_EXT" \
@@ -280,11 +267,9 @@ python inference.py \
 echo ""
 log_step "Finalisation..."
 
-# Trouver le fichier généré (le plus récent)
 OUTPUT_FILE=$(find "$OUTPUT_DIR" -name "*.mp4" -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
 
 if [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
-    # Copier avec un nom simple et prévisible
     cp "$OUTPUT_FILE" "$OUTPUT_DIR/final_output.mp4"
     
     echo ""
@@ -295,13 +280,32 @@ if [ -n "$OUTPUT_FILE" ] && [ -f "$OUTPUT_FILE" ]; then
     log_info "Vidéo générée: $OUTPUT_DIR/final_output.mp4"
     echo ""
     
-    # Afficher les infos de la vidéo
     log_info "Informations vidéo:"
     ffprobe -v quiet -show_entries format=duration,size -show_entries stream=width,height,codec_name -of default=noprint_wrappers=1 "$OUTPUT_DIR/final_output.mp4" 2>/dev/null | head -10
     
     echo ""
     log_info "Taille du fichier: $(du -h "$OUTPUT_DIR/final_output.mp4" | cut -f1)"
     echo ""
+    
+    # =============================================================================
+    # UPLOAD VERS N8N
+    # =============================================================================
+    if [ -n "$WEBHOOK_URL" ]; then
+        log_step "Upload de la vidéo vers n8n..."
+        UPLOAD_RESPONSE=$(curl -s -X POST -F "file=@$OUTPUT_DIR/final_output.mp4" "$WEBHOOK_URL")
+        log_info "Upload terminé: $UPLOAD_RESPONSE"
+    fi
+    
+    # =============================================================================
+    # DESTRUCTION DE L'INSTANCE VAST.AI
+    # =============================================================================
+    if [ -n "$VAST_INSTANCE_ID" ] && [ -n "$VAST_API_KEY" ]; then
+        log_step "Destruction de l'instance Vast.ai #$VAST_INSTANCE_ID..."
+        DESTROY_RESPONSE=$(curl -s -X DELETE \
+            -H "Authorization: Bearer $VAST_API_KEY" \
+            "https://console.vast.ai/api/v0/instances/$VAST_INSTANCE_ID/")
+        log_info "Instance détruite: $DESTROY_RESPONSE"
+    fi
     
 else
     echo ""
@@ -314,21 +318,9 @@ else
     exit 1
 fi
 
-# =============================================================================
-# NETTOYAGE OPTIONNEL
-# =============================================================================
-# Décommenter pour nettoyer les fichiers temporaires
-# rm -rf input/
-# log_info "Fichiers temporaires nettoyés"
-
+echo ""
 echo "=========================================="
 echo "  Fichier de sortie:"
 echo "  $OUTPUT_DIR/final_output.mp4"
 echo "=========================================="
 echo ""
-
-# Upload vers n8n
-WEBHOOK_URL="https://n8n-perso.hosting-fr.net/webhook/1d48dcd3-cefc-4aad-ab85-482029568259"
-curl -X POST -F "file=@/workspace/output/final_output.mp4" "$WEBHOOK_URL"
-
-
