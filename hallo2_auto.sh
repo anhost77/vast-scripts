@@ -1,10 +1,13 @@
 #!/bin/bash
 # =============================================================================
 # HALLO2 - Vast.ai
-# Animation portrait complet (visage + corps + mains)
-# Basé sur la doc officielle: https://github.com/fudan-generative-vision/hallo2
-# Requiert GPU 24GB+ (RTX 3090/4090/A100)
-# Usage: bash hallo2_auto.sh <image_url> <audio_url> <webhook_url>
+# SCRIPT BASÉ EXACTEMENT SUR LA DOC OFFICIELLE
+# https://github.com/fudan-generative-vision/hallo2
+# 
+# System requirement: Ubuntu 20.04/Ubuntu 22.04, Cuda 11.8
+# Tested GPUs: A100 (fonctionne aussi sur RTX 4090 24GB)
+#
+# Usage: bash hallo2_auto.sh <image_url> <audio_url> [webhook_url]
 # =============================================================================
 
 set -e
@@ -20,12 +23,12 @@ log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 log_step() { echo -e "${BLUE}[STEP]${NC} $1"; }
+log_cmd() { echo -e "${YELLOW}[CMD]${NC} $1"; }
 
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 WORK_DIR="/workspace"
-OUTPUT_DIR="/workspace/output"
 HALLO_DIR="/workspace/hallo2"
 IMAGE_URL="${1:-}"
 AUDIO_URL="${2:-}"
@@ -44,16 +47,15 @@ if [ -z "$IMAGE_URL" ] || [ -z "$AUDIO_URL" ]; then
     echo ""
     echo "Usage: bash hallo2_auto.sh <image_url> <audio_url> [webhook_url]"
     echo ""
-    echo "⚠️  Requiert GPU 24GB+ (RTX 3090/4090/A100)"
+    echo "Exigences image source (selon doc):"
+    echo "  - It should be cropped into squares"
+    echo "  - The face should be the main focus, making up 50%-70% of the image"
+    echo "  - The face should be facing forward, with a rotation angle of less than 30°"
     echo ""
-    echo "Exigences image source:"
-    echo "  - Format carré (1:1)"
-    echo "  - Visage = 50-70% de l'image"
-    echo "  - Visage de face (angle < 30°)"
-    echo ""
-    echo "Exigences audio:"
-    echo "  - Format WAV"
-    echo "  - Voix claire (musique de fond OK)"
+    echo "Exigences audio (selon doc):"
+    echo "  - It must be in WAV format"
+    echo "  - It must be in English since training datasets are only in this language"
+    echo "  - Ensure the vocals are clear; background music is acceptable"
     echo ""
     exit 1
 fi
@@ -61,6 +63,7 @@ fi
 echo ""
 echo "=========================================="
 echo "  Hallo2 - Animation Portrait Complet"
+echo "  (Selon doc officielle GitHub)"
 echo "=========================================="
 echo ""
 log_info "Image: $IMAGE_URL"
@@ -72,24 +75,9 @@ echo ""
 # VÉRIFICATION GPU
 # =============================================================================
 log_step "Vérification du GPU..."
-
 GPU_MEM=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
 log_info "VRAM disponible: ${GPU_MEM}MB"
-
-if [ "$GPU_MEM" -lt 20000 ]; then
-    log_error "Hallo2 nécessite 24GB+ de VRAM. GPU actuel: ${GPU_MEM}MB"
-    exit 1
-fi
-
-log_info "✅ GPU compatible"
-
-# =============================================================================
-# INSTALLATION DÉPENDANCES SYSTÈME
-# =============================================================================
-log_step "Installation des dépendances système..."
-apt-get update -qq
-apt-get install -y -qq wget curl git ffmpeg libgl1-mesa-glx libglib2.0-0 unzip > /dev/null 2>&1
-log_info "Dépendances système installées"
+log_info "✅ GPU détecté"
 
 # =============================================================================
 # TÉLÉCHARGEMENT DES FICHIERS INPUT
@@ -97,187 +85,237 @@ log_info "Dépendances système installées"
 log_step "Téléchargement des fichiers d'entrée..."
 
 mkdir -p "$WORK_DIR/input"
-mkdir -p "$OUTPUT_DIR"
 
-# Détection extension image
-IMAGE_EXT="${IMAGE_URL##*.}"
-IMAGE_EXT="${IMAGE_EXT%%\?*}"
-[ -z "$IMAGE_EXT" ] || [ ${#IMAGE_EXT} -gt 4 ] && IMAGE_EXT="png"
-
+# Image
 log_info "Téléchargement de l'image..."
-wget -q --show-progress -O "$WORK_DIR/input/source.$IMAGE_EXT" "$IMAGE_URL" || {
+wget -q --show-progress -O "$WORK_DIR/input/source.png" "$IMAGE_URL" || {
     log_error "Impossible de télécharger l'image"
     exit 1
 }
 
+# Audio
 log_info "Téléchargement de l'audio..."
-wget -q --show-progress -O "$WORK_DIR/input/audio_original" "$AUDIO_URL" || {
+wget -q --show-progress -O "$WORK_DIR/input/audio_temp" "$AUDIO_URL" || {
     log_error "Impossible de télécharger l'audio"
     exit 1
 }
 
-# Conversion audio en WAV (requis par Hallo2)
+# Conversion audio en WAV (doc: "It must be in WAV format")
 log_info "Conversion audio en WAV..."
-ffmpeg -y -i "$WORK_DIR/input/audio_original" -ar 16000 -ac 1 -acodec pcm_s16le "$WORK_DIR/input/audio.wav" -loglevel quiet || {
-    log_warn "Conversion ffmpeg échouée, tentative alternative..."
-    mv "$WORK_DIR/input/audio_original" "$WORK_DIR/input/audio.wav"
+ffmpeg -y -i "$WORK_DIR/input/audio_temp" -ar 16000 -ac 1 -acodec pcm_s16le "$WORK_DIR/input/audio.wav" -loglevel error || {
+    log_warn "Conversion échouée, utilisation directe..."
+    mv "$WORK_DIR/input/audio_temp" "$WORK_DIR/input/audio.wav"
 }
+rm -f "$WORK_DIR/input/audio_temp"
 
-log_info "Fichiers prêts"
+log_info "✅ Fichiers prêts"
+log_info "  - Image: $WORK_DIR/input/source.png"
+log_info "  - Audio: $WORK_DIR/input/audio.wav"
 
 # =============================================================================
-# INSTALLATION HALLO2 (selon doc officielle)
+# ÉTAPE 1: Download the codes (selon doc)
+# git clone https://github.com/fudan-generative-vision/hallo2
+# cd hallo2
 # =============================================================================
 echo ""
 log_step "=========================================="
-log_step "Installation de Hallo2"
+log_step "ÉTAPE 1: Download the codes"
 log_step "=========================================="
-echo ""
 
 if [ ! -d "$HALLO_DIR" ]; then
-    log_info "Clonage de Hallo2..."
-    git clone https://github.com/fudan-generative-vision/hallo2.git "$HALLO_DIR"
+    log_cmd "git clone https://github.com/fudan-generative-vision/hallo2"
+    git clone https://github.com/fudan-generative-vision/hallo2 "$HALLO_DIR"
+else
+    log_info "Hallo2 déjà cloné"
 fi
 
+log_cmd "cd hallo2"
 cd "$HALLO_DIR"
 
-# Installation des dépendances Python (selon doc: CUDA 11.8)
-log_info "Installation des dépendances Python..."
-pip install -q torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu118 2>/dev/null || true
-pip install -q -r requirements.txt 2>/dev/null || true
+# =============================================================================
+# ÉTAPE 2: Install packages with pip (selon doc)
+# pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu118
+# pip install -r requirements.txt
+# apt-get install ffmpeg
+# =============================================================================
+echo ""
+log_step "=========================================="
+log_step "ÉTAPE 2: Install packages with pip"
+log_step "=========================================="
+
+log_cmd "pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu118"
+pip install torch==2.2.2 torchvision==0.17.2 torchaudio==2.2.2 --index-url https://download.pytorch.org/whl/cu118 2>&1 | tail -10
+
+log_cmd "pip install -r requirements.txt"
+pip install -r requirements.txt 2>&1 | tail -10
+
+log_cmd "apt-get install ffmpeg"
+apt-get update -qq && apt-get install -y -qq ffmpeg > /dev/null 2>&1
+
+log_info "✅ Packages installés"
 
 # =============================================================================
-# TÉLÉCHARGEMENT DES MODÈLES (selon doc officielle)
+# ÉTAPE 3: Download Pretrained Models (selon doc)
+# pip install huggingface_hub
+# huggingface-cli download fudan-generative-ai/hallo2 --local-dir ./pretrained_models
 # =============================================================================
-log_step "Téléchargement des modèles pré-entraînés..."
+echo ""
+log_step "=========================================="
+log_step "ÉTAPE 3: Download Pretrained Models"
+log_step "=========================================="
 
-# Vérifier si les modèles existent déjà
-if [ ! -f "pretrained_models/hallo2/net.pth" ]; then
-    log_info "Téléchargement depuis HuggingFace (peut prendre 10-15 min)..."
-    
-    pip install -q huggingface_hub 2>/dev/null || true
-    
-    # Télécharger tous les modèles d'un coup (comme dans la doc)
-    huggingface-cli download fudan-generative-ai/hallo2 --local-dir ./pretrained_models 2>&1 | tail -10 || {
-        log_warn "huggingface-cli échoué, essai avec Python..."
-        python3 -c "
-from huggingface_hub import snapshot_download
-snapshot_download(repo_id='fudan-generative-ai/hallo2', local_dir='./pretrained_models')
-print('Modèles téléchargés')
-" 2>&1 | tail -5
-    }
+log_cmd "pip install huggingface_hub"
+pip install huggingface_hub 2>&1 | tail -3
+
+# Vérifier si modèles déjà présents (structure selon doc)
+if [ -f "./pretrained_models/hallo2/net.pth" ]; then
+    log_info "Modèles déjà téléchargés"
+else
+    log_cmd "huggingface-cli download fudan-generative-ai/hallo2 --local-dir ./pretrained_models"
+    huggingface-cli download fudan-generative-ai/hallo2 --local-dir ./pretrained_models 2>&1 | tail -20
 fi
 
-# Vérifier structure des modèles
-if [ ! -f "pretrained_models/hallo2/net.pth" ] && [ ! -f "pretrained_models/net.pth" ]; then
-    log_error "Modèles Hallo2 non trouvés !"
-    log_info "Structure attendue: pretrained_models/hallo2/net.pth"
-    ls -la pretrained_models/ 2>/dev/null || true
+# Vérification structure (selon doc):
+# ./pretrained_models/hallo2/net_g.pth et net.pth
+log_info "Vérification de la structure des modèles..."
+echo "Contenu de ./pretrained_models/:"
+ls -la ./pretrained_models/ 2>/dev/null || true
+echo ""
+echo "Contenu de ./pretrained_models/hallo2/:"
+ls -la ./pretrained_models/hallo2/ 2>/dev/null || true
+
+if [ ! -f "./pretrained_models/hallo2/net.pth" ] && [ ! -f "./pretrained_models/hallo2/net_g.pth" ]; then
+    log_error "Modèles hallo2 non trouvés!"
+    log_info "Structure attendue selon doc:"
+    echo "./pretrained_models/"
+    echo "|-- hallo2"
+    echo "|   |-- net_g.pth"
+    echo "|   \`-- net.pth"
     exit 1
 fi
 
 log_info "✅ Modèles prêts"
 
 # =============================================================================
-# GÉNÉRATION AVEC HALLO2
+# ÉTAPE 4: Run Inference (selon doc)
+# python scripts/inference_long.py --config ./configs/inference/long.yaml
+# 
+# Options disponibles selon doc:
+#   --source_image SOURCE_IMAGE
+#   --driving_audio DRIVING_AUDIO
+#   --pose_weight POSE_WEIGHT
+#   --face_weight FACE_WEIGHT
+#   --lip_weight LIP_WEIGHT
+#   --face_expand_ratio FACE_EXPAND_RATIO
 # =============================================================================
 echo ""
 log_step "=========================================="
-log_step "Hallo2 - Génération vidéo"
+log_step "ÉTAPE 4: Run Inference"
 log_step "=========================================="
-echo ""
 
-# Vider le cache GPU
 log_info "Nettoyage cache GPU..."
 python3 -c "import torch; torch.cuda.empty_cache()" 2>/dev/null || true
 
-# Lancer l'inférence (selon doc officielle: inference_long.py)
-log_info "Génération de la vidéo (peut prendre 5-15 minutes)..."
+log_cmd "python scripts/inference_long.py --config ./configs/inference/long.yaml --source_image ... --driving_audio ..."
+
+log_info ""
+log_info "Paramètres:"
+log_info "  --source_image: $WORK_DIR/input/source.png"
+log_info "  --driving_audio: $WORK_DIR/input/audio.wav"
+log_info "  --pose_weight: 1.0"
+log_info "  --face_weight: 1.0"
+log_info "  --lip_weight: 1.0"
+log_info "  --face_expand_ratio: 1.2"
+log_info ""
+log_info "Génération en cours (peut prendre 5-20 minutes selon durée audio)..."
+echo ""
 
 python scripts/inference_long.py \
     --config ./configs/inference/long.yaml \
-    --source_image "$WORK_DIR/input/source.$IMAGE_EXT" \
+    --source_image "$WORK_DIR/input/source.png" \
     --driving_audio "$WORK_DIR/input/audio.wav" \
     --pose_weight 1.0 \
     --face_weight 1.0 \
     --lip_weight 1.0 \
     --face_expand_ratio 1.2 \
-    2>&1 | tee "$OUTPUT_DIR/hallo2.log"
+    2>&1 | tee "$WORK_DIR/hallo2_inference.log"
 
 # =============================================================================
-# RECHERCHE DU FICHIER OUTPUT
+# ÉTAPE 5: Récupération du résultat
+# Selon doc: "Animation results will be saved at save_path"
+# Par défaut dans ./output/ ou configuré dans long.yaml
 # =============================================================================
-log_step "Recherche du fichier généré..."
+echo ""
+log_step "=========================================="
+log_step "ÉTAPE 5: Récupération du résultat"
+log_step "=========================================="
 
-# Hallo2 sauvegarde dans ./output/ par défaut selon le config
-FOUND_OUTPUT=""
+log_info "Recherche de la vidéo générée..."
 
 # Chercher dans les emplacements possibles
-for search_dir in "$HALLO_DIR/output" "$HALLO_DIR" "$OUTPUT_DIR" "/workspace"; do
-    if [ -d "$search_dir" ]; then
-        FOUND=$(find "$search_dir" -maxdepth 2 -name "*.mp4" -type f -mmin -10 2>/dev/null | head -1)
+FOUND_OUTPUT=""
+for search_path in \
+    "$HALLO_DIR/output" \
+    "$HALLO_DIR/outputs" \
+    "$HALLO_DIR" \
+    "/workspace/output" \
+    "/workspace"; do
+    
+    if [ -d "$search_path" ]; then
+        # Chercher fichiers mp4 créés dans les 30 dernières minutes
+        FOUND=$(find "$search_path" -maxdepth 3 -name "*.mp4" -type f -mmin -30 2>/dev/null | head -1)
         if [ -n "$FOUND" ] && [ -f "$FOUND" ]; then
             FOUND_OUTPUT="$FOUND"
+            log_info "Vidéo trouvée: $FOUND_OUTPUT"
             break
         fi
     fi
 done
 
 if [ -z "$FOUND_OUTPUT" ]; then
-    log_error "Aucune vidéo générée par Hallo2"
+    log_error "Aucune vidéo générée!"
     echo ""
-    log_info "=== Dernières lignes du log ==="
-    tail -100 "$OUTPUT_DIR/hallo2.log" 2>/dev/null || true
+    log_info "=== Dernières 150 lignes du log ==="
+    tail -150 "$WORK_DIR/hallo2_inference.log" 2>/dev/null || true
     echo ""
     log_info "=== Contenu des dossiers ==="
-    ls -la "$HALLO_DIR/output/" 2>/dev/null || true
-    ls -la "$OUTPUT_DIR/" 2>/dev/null || true
+    echo "--- $HALLO_DIR/output/ ---"
+    ls -la "$HALLO_DIR/output/" 2>/dev/null || echo "(vide ou inexistant)"
+    echo "--- $HALLO_DIR/ ---"
+    ls -la "$HALLO_DIR/"*.mp4 2>/dev/null || echo "(pas de mp4)"
     exit 1
 fi
 
-# Copier vers output final
-cp "$FOUND_OUTPUT" "$OUTPUT_DIR/hallo2_output.mp4"
-FINAL_OUTPUT="$OUTPUT_DIR/hallo2_output.mp4"
+# Copier vers emplacement final
+mkdir -p "$WORK_DIR/output"
+FINAL_OUTPUT="$WORK_DIR/output/hallo2_result.mp4"
+cp "$FOUND_OUTPUT" "$FINAL_OUTPUT"
 
-log_info "✅ Vidéo générée: $FINAL_OUTPUT"
-
-# =============================================================================
-# SUPER RÉSOLUTION (optionnel)
-# =============================================================================
-# Décommenter si tu veux une meilleure qualité (prend plus de temps)
-# log_step "Amélioration de la résolution..."
-# python scripts/video_sr.py \
-#     --input_path "$FINAL_OUTPUT" \
-#     --output_path "$OUTPUT_DIR/" \
-#     --bg_upsampler realesrgan \
-#     --face_upsample \
-#     -w 1 -s 2
+log_info "✅ Vidéo copiée vers: $FINAL_OUTPUT"
 
 # =============================================================================
 # FINALISATION
 # =============================================================================
 echo ""
-log_step "Finalisation..."
-
-echo ""
 echo "=========================================="
-echo -e "${GREEN}  ✅ HALLO2 TERMINÉ !${NC}"
+echo -e "${GREEN}  ✅ HALLO2 TERMINÉ AVEC SUCCÈS !${NC}"
 echo "=========================================="
 echo ""
 
 log_info "Informations vidéo:"
-ffprobe -v quiet -show_entries format=duration,size -show_entries stream=width,height,codec_name -of default=noprint_wrappers=1 "$FINAL_OUTPUT" 2>/dev/null | head -10
+ffprobe -v quiet -show_entries format=duration,size -show_entries stream=width,height -of default=noprint_wrappers=1 "$FINAL_OUTPUT" 2>/dev/null | head -10
 log_info "Taille: $(du -h "$FINAL_OUTPUT" | cut -f1)"
 
-# Upload vers webhook
+# Upload vers webhook si spécifié
 if [ -n "$WEBHOOK_URL" ]; then
-    log_step "Upload de la vidéo vers webhook..."
+    echo ""
+    log_step "Upload vers webhook..."
     UPLOAD_RESPONSE=$(curl -s -X POST -F "file=@$FINAL_OUTPUT" "$WEBHOOK_URL")
-    log_info "Upload terminé: $UPLOAD_RESPONSE"
+    log_info "Réponse: $UPLOAD_RESPONSE"
 fi
 
 echo ""
 echo "=========================================="
-echo "  Fichier: $FINAL_OUTPUT"
+echo "  Fichier final: $FINAL_OUTPUT"
 echo "=========================================="
 echo ""
