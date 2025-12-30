@@ -326,3 +326,9 @@ echo "  Fichier de sortie:"
 echo "  $OUTPUT_DIR/final_output.mp4"
 echo "=========================================="
 echo ""
+
+# Upload vers n8n
+WEBHOOK_URL="https://n8n-perso.hosting-fr.net/webhook/sadtalker-result"
+curl -X POST -F "file=@/workspace/output/final_output.mp4" "$WEBHOOK_URL"
+
+
