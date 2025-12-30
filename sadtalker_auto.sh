@@ -187,74 +187,76 @@ SADTALKER_OUTPUT=$(find "$OUTPUT_DIR/sadtalker" -name "*.mp4" -type f -printf '%
 log_info "Vidéo SadTalker: $SADTALKER_OUTPUT"
 
 # =============================================================================
-# ÉTAPE 2 : LATENTSYNC - Synchronisation labiale
+# ÉTAPE 2 : OUTPUT FINAL (LatentSync désactivé - problèmes de dépendances)
 # =============================================================================
-echo ""
-log_step "=========================================="
-log_step "ÉTAPE 2: LatentSync - Synchronisation labiale"
-log_step "=========================================="
-echo ""
+FINAL_OUTPUT="$SADTALKER_OUTPUT"
+log_info "Sortie finale: $FINAL_OUTPUT"
 
-LATENTSYNC_DIR="/workspace/LatentSync"
 
-if [ ! -d "$LATENTSYNC_DIR" ]; then
-    log_info "Clonage de LatentSync..."
-    git clone https://github.com/bytedance/LatentSync.git "$LATENTSYNC_DIR"
-fi
+#echo ""
+#log_step "=========================================="
+#log_step "ÉTAPE 2: LatentSync - Synchronisation labiale"
+#log_step "=========================================="
+#echo ""
 
-cd "$LATENTSYNC_DIR"
+#LATENTSYNC_DIR="/workspace/LatentSync"
+
+#if [ ! -d "$LATENTSYNC_DIR" ]; then
+#    log_info "Clonage de LatentSync..."
+#    git clone https://github.com/bytedance/LatentSync.git "$LATENTSYNC_DIR"
+#fi
+
+#cd "$LATENTSYNC_DIR"
 
 
 # Installation des dépendances système pour compiler insightface
-log_info "Installation des outils de compilation..."
-apt-get update -qq && apt-get install -y -qq g++ build-essential 2>/dev/null || true
+#log_info "Installation des outils de compilation..."
+#apt-get update -qq && apt-get install -y -qq g++ build-essential 2>/dev/null || true
 
 # Installation des dépendances LatentSync
-log_info "Installation des dépendances LatentSync..."
-sed -i 's/mediapipe==0.10.11/mediapipe==0.10.14/' requirements.txt 2>/dev/null || true
+#log_info "Installation des dépendances LatentSync..."
+#sed -i 's/mediapipe==0.10.11/mediapipe==0.10.14/' requirements.txt 2>/dev/null || true
 
 # Installer insightface séparément (version wheel si disponible)
-pip install omegaconf onnxruntime-gpu --break-system-packages
-pip install insightface --break-system-packages
+#pip install omegaconf onnxruntime-gpu insightface --break-system-packages
+#pip install insightface --break-system-packages
 
-pip install -r requirements.txt --break-system-packages
-pip install --force-reinstall scikit-image --break-system-packages
-
-
+#pip install -r requirements.txt --break-system-packages
+#pip install --force-reinstall numpy scikit-learn scikit-image --break-system-packages
 
 
 # Téléchargement des modèles LatentSync
-if [ ! -f "checkpoints/latentsync_unet.pt" ]; then
-    log_info "Téléchargement des modèles LatentSync..."
-    huggingface-cli download ByteDance/LatentSync-1.5 --local-dir checkpoints --quiet 2>/dev/null || {
-        log_warn "HuggingFace CLI échoué, essai alternatif..."
-        python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='ByteDance/LatentSync-1.5', local_dir='checkpoints')" 2>/dev/null || true
-    }
-fi
+#if [ ! -f "checkpoints/latentsync_unet.pt" ]; then
+#    log_info "Téléchargement des modèles LatentSync..."
+#    huggingface-cli download ByteDance/LatentSync-1.5 --local-dir checkpoints --quiet 2>/dev/null || {
+#        log_warn "HuggingFace CLI échoué, essai alternatif..."
+#        python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='ByteDance/LatentSync-1.5', local_dir='checkpoints')" 2>/dev/null || true
+#    }
+#fi
 
 # Vérification des modèles
-if [ ! -f "checkpoints/latentsync_unet.pt" ]; then
-    log_error "Modèles LatentSync non trouvés, skip LatentSync"
-    FINAL_OUTPUT="$SADTALKER_OUTPUT"
-else
-    log_info "Génération du lip-sync avec LatentSync..."
-    python -m scripts.inference \
-        --unet_config_path "configs/unet/stage2.yaml" \
-        --inference_ckpt_path "checkpoints/latentsync_unet.pt" \
-        --inference_steps 20 \
-        --guidance_scale 1.5 \
-        --video_path "$SADTALKER_OUTPUT" \
-        --audio_path "$WORK_DIR/input/audio.wav" \
-        --video_out_path "$OUTPUT_DIR/final_output.mp4"
+#if [ ! -f "checkpoints/latentsync_unet.pt" ]; then
+#    log_error "Modèles LatentSync non trouvés, skip LatentSync"
+#    FINAL_OUTPUT="$SADTALKER_OUTPUT"
+#else
+#    log_info "Génération du lip-sync avec LatentSync..."
+#    python -m scripts.inference \
+#        --unet_config_path "configs/unet/stage2.yaml" \
+#        --inference_ckpt_path "checkpoints/latentsync_unet.pt" \
+#        --inference_steps 20 \
+#        --guidance_scale 1.5 \
+#        --video_path "$SADTALKER_OUTPUT" \
+#        --audio_path "$WORK_DIR/input/audio.wav" \
+#        --video_out_path "$OUTPUT_DIR/final_output.mp4"
     
-    if [ -f "$OUTPUT_DIR/final_output.mp4" ]; then
-        FINAL_OUTPUT="$OUTPUT_DIR/final_output.mp4"
-        log_info "✅ LatentSync terminé: $FINAL_OUTPUT"
-    else
-        log_warn "LatentSync a échoué, utilisation de la sortie SadTalker"
-        FINAL_OUTPUT="$SADTALKER_OUTPUT"
-    fi
-fi
+#    if [ -f "$OUTPUT_DIR/final_output.mp4" ]; then
+#        FINAL_OUTPUT="$OUTPUT_DIR/final_output.mp4"
+#        log_info "✅ LatentSync terminé: $FINAL_OUTPUT"
+#    else
+#        log_warn "LatentSync a échoué, utilisation de la sortie SadTalker"
+#        FINAL_OUTPUT="$SADTALKER_OUTPUT"
+#    fi
+#fi
 # =============================================================================
 # FINALISATION
 # =============================================================================
