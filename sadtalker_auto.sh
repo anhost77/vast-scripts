@@ -233,8 +233,8 @@ wget -q --show-progress -O "input/audio.$AUDIO_EXT" "$AUDIO_URL" || {
 }
 
 if [ "$AUDIO_EXT" != "wav" ]; then
-    log_info "Conversion de l'audio en WAV..."
-    ffmpeg -y -i "input/audio.$AUDIO_EXT" -ar 16000 -ac 1 "input/audio.wav" -loglevel quiet
+    log_info "Optimisation de l'audio..."
+    ffmpeg -y -i "input/audio.$AUDIO_EXT" -ar 16000 -ac 1 -af "highpass=f=80,lowpass=f=8000,afftdn=nf=-20" "input/audio.wav" -loglevel quiet
     AUDIO_EXT="wav"
 fi
 
@@ -253,13 +253,14 @@ python inference.py \
     --driven_audio "input/audio.$AUDIO_EXT" \
     --source_image "input/avatar.$IMAGE_EXT" \
     --result_dir "$OUTPUT_DIR" \
-    --still \
-    --preprocess crop \
+    --preprocess full \
     --enhancer gfpgan \
     --size 512 \
     --expression_scale 1.0 \
-    --pose_style 0 \
-    --batch_size 2
+    --pose_style 46 \
+    --batch_size 2 \
+    --blink_every \
+    --face3dvis
 
 # =============================================================================
 # FINALISATION
