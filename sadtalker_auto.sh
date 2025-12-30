@@ -204,12 +204,24 @@ fi
 
 cd "$LATENTSYNC_DIR"
 
+
+# Installation des dépendances système pour compiler insightface
+log_info "Installation des outils de compilation..."
+apt-get update -qq && apt-get install -y -qq g++ build-essential 2>/dev/null || true
+
 # Installation des dépendances LatentSync
 log_info "Installation des dépendances LatentSync..."
 sed -i 's/mediapipe==0.10.11/mediapipe==0.10.14/' requirements.txt 2>/dev/null || true
-pip install omegaconf --break-system-packages
+
+# Installer insightface séparément (version wheel si disponible)
+pip install omegaconf onnxruntime-gpu --break-system-packages
+pip install insightface --break-system-packages
+
 pip install -r requirements.txt --break-system-packages
 pip install --force-reinstall scikit-image --break-system-packages
+
+
+
 
 # Téléchargement des modèles LatentSync
 if [ ! -f "checkpoints/latentsync_unet.pt" ]; then
