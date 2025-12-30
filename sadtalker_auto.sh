@@ -328,7 +328,7 @@ echo "=========================================="
 echo ""
 
 # Upload vers n8n
-WEBHOOK_URL="https://n8n-perso.hosting-fr.net/webhook/sadtalker-result"
+WEBHOOK_URL="https://n8n-perso.hosting-fr.net/webhook/1d48dcd3-cefc-4aad-ab85-482029568259"
 curl -X POST -F "file=@/workspace/output/final_output.mp4" "$WEBHOOK_URL"
 
 
