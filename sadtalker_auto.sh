@@ -204,26 +204,45 @@ fi
 
 cd "$LATENTSYNC_DIR"
 
-# Installation des dépendances LatentSync
+# Installation de TOUTES les dépendances LatentSync
 log_info "Installation des dépendances LatentSync..."
-pip install -q -r requirements.txt 2>/dev/null || true
+pip install -q omegaconf einops diffusers accelerate transformers safetensors huggingface_hub --break-system-packages 2>/dev/null || true
+pip install -q -r requirements.txt --break-system-packages 2>/dev/null || true
 
-# Téléchargement des modèles LatentSync
+# Téléchargement des modèles LatentSync (tous les checkpoints nécessaires)
 if [ ! -f "checkpoints/latentsync_unet.pt" ]; then
     log_info "Téléchargement des modèles LatentSync..."
-    huggingface-cli download ByteDance/LatentSync-1.5 --local-dir checkpoints 2>/dev/null || true
+    mkdir -p checkpoints
+    huggingface-cli download ByteDance/LatentSync-1.5 --local-dir checkpoints --quiet 2>/dev/null || {
+        log_warn "HuggingFace CLI échoué, essai avec Python..."
+        python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='ByteDance/LatentSync-1.5', local_dir='checkpoints')" 2>/dev/null || true
+    }
 fi
 
-# Exécution LatentSync
-log_info "Génération du lip-sync avec LatentSync..."
-python -m scripts.inference \
-    --unet_config_path "configs/unet/stage2.yaml" \
-    --inference_ckpt_path "checkpoints/latentsync_unet.pt" \
-    --inference_steps 20 \
-    --guidance_scale 1.5 \
-    --video_path "$SADTALKER_OUTPUT" \
-    --audio_path "$WORK_DIR/input/audio.wav" \
-    --video_out_path "$OUTPUT_DIR/final_output.mp4"
+# Vérification que les modèles sont présents
+if [ ! -f "checkpoints/latentsync_unet.pt" ]; then
+    log_error "Modèles LatentSync non trouvés, skip LatentSync"
+    FINAL_OUTPUT="$SADTALKER_OUTPUT"
+else
+    # Exécution LatentSync
+    log_info "Génération du lip-sync avec LatentSync..."
+    python -m scripts.inference \
+        --unet_config_path "configs/unet/stage2.yaml" \
+        --inference_ckpt_path "checkpoints/latentsync_unet.pt" \
+        --inference_steps 20 \
+        --guidance_scale 1.5 \
+        --video_path "$SADTALKER_OUTPUT" \
+        --audio_path "$WORK_DIR/input/audio.wav" \
+        --video_out_path "$OUTPUT_DIR/final_output.mp4"
+    
+    if [ -f "$OUTPUT_DIR/final_output.mp4" ]; then
+        FINAL_OUTPUT="$OUTPUT_DIR/final_output.mp4"
+        log_info "✅ LatentSync terminé: $FINAL_OUTPUT"
+    else
+        log_warn "LatentSync a échoué, utilisation de la sortie SadTalker"
+        FINAL_OUTPUT="$SADTALKER_OUTPUT"
+    fi
+fi
 
 # =============================================================================
 # FINALISATION
