@@ -259,7 +259,6 @@ python inference.py \
     --expression_scale 1.0 \
     --pose_style 46 \
     --batch_size 2 \
-    --blink_every \
     --face3dvis
 
 # =============================================================================
