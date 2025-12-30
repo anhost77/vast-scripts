@@ -111,7 +111,10 @@ wget -q --show-progress -O "$WORK_DIR/input/audio.$AUDIO_EXT" "$AUDIO_URL" || {
 
 # Optimisation audio
 log_info "Optimisation de l'audio..."
-ffmpeg -y -i "$WORK_DIR/input/audio.$AUDIO_EXT" -ar 16000 -ac 1 -af "highpass=f=80,lowpass=f=8000,afftdn=nf=-20" "$WORK_DIR/input/audio.wav" -loglevel quiet
+ffmpeg -y -i "$WORK_DIR/input/audio.$AUDIO_EXT" -ar 16000 -ac 1 "$WORK_DIR/input/audio.wav" -loglevel quiet || {
+    log_warn "Conversion simple de l'audio..."
+    cp "$WORK_DIR/input/audio.$AUDIO_EXT" "$WORK_DIR/input/audio.wav"
+}
 AUDIO_EXT="wav"
 
 log_info "Fichiers prêts"
