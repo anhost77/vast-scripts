@@ -111,10 +111,16 @@ wget -q --show-progress -O "$WORK_DIR/input/audio.$AUDIO_EXT" "$AUDIO_URL" || {
 
 # Optimisation audio
 log_info "Optimisation de l'audio..."
-ffmpeg -y -i "$WORK_DIR/input/audio.$AUDIO_EXT" -ar 16000 -ac 1 "$WORK_DIR/input/audio.wav" -loglevel quiet || {
-    log_warn "Conversion simple de l'audio..."
-    cp "$WORK_DIR/input/audio.$AUDIO_EXT" "$WORK_DIR/input/audio.wav"
-}
+if [ "$AUDIO_EXT" != "wav" ]; then
+    ffmpeg -y -i "$WORK_DIR/input/audio.$AUDIO_EXT" -ar 16000 -ac 1 "$WORK_DIR/input/audio.wav" -loglevel quiet || {
+        log_warn "Conversion simple de l'audio..."
+        cp "$WORK_DIR/input/audio.$AUDIO_EXT" "$WORK_DIR/input/audio.wav"
+    }
+else
+    # Déjà en WAV, on normalise juste le sample rate
+    ffmpeg -y -i "$WORK_DIR/input/audio.wav" -ar 16000 -ac 1 "$WORK_DIR/input/audio_converted.wav" -loglevel quiet && \
+    mv "$WORK_DIR/input/audio_converted.wav" "$WORK_DIR/input/audio.wav" || true
+fi
 AUDIO_EXT="wav"
 
 log_info "Fichiers prêts"
