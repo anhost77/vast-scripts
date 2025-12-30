@@ -112,11 +112,16 @@ wget -q --show-progress -O "$WORK_DIR/input/audio.$AUDIO_EXT" "$AUDIO_URL" || {
 }
 
 # Conversion audio en WAV 16kHz mono
-log_info "Conversion audio en WAV 16kHz mono..."
-ffmpeg -y -i "$WORK_DIR/input/audio.$AUDIO_EXT" -ar 16000 -ac 1 "$WORK_DIR/input/audio.wav" -loglevel quiet || {
-    log_warn "Conversion échouée, copie simple..."
-    cp "$WORK_DIR/input/audio.$AUDIO_EXT" "$WORK_DIR/input/audio.wav"
-}
+if [ "$AUDIO_EXT" != "wav" ]; then
+    ffmpeg -y -i "$WORK_DIR/input/audio.$AUDIO_EXT" -ar 16000 -ac 1 "$WORK_DIR/input/audio.wav" -loglevel quiet || {
+        log_warn "Conversion échouée, copie simple..."
+        cp "$WORK_DIR/input/audio.$AUDIO_EXT" "$WORK_DIR/input/audio.wav"
+    }
+else
+    # Déjà WAV, juste normaliser
+    ffmpeg -y -i "$WORK_DIR/input/audio.wav" -ar 16000 -ac 1 "$WORK_DIR/input/audio_converted.wav" -loglevel quiet && \
+    mv "$WORK_DIR/input/audio_converted.wav" "$WORK_DIR/input/audio.wav" || true
+fi
 
 log_info "Fichiers prêts"
 
