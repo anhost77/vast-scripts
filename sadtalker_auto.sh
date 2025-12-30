@@ -195,7 +195,7 @@ log_step "ÉTAPE 2: LatentSync - Synchronisation labiale"
 log_step "=========================================="
 echo ""
 
-LATENTSYNC_DIR="$WORK_DIR/LatentSync"
+LATENTSYNC_DIR="/workspace/LatentSync"
 
 if [ ! -d "$LATENTSYNC_DIR" ]; then
     log_info "Clonage de LatentSync..."
@@ -207,25 +207,23 @@ cd "$LATENTSYNC_DIR"
 # Installation des dépendances LatentSync
 log_info "Installation des dépendances LatentSync..."
 pip install -q -r requirements.txt 2>/dev/null || true
-pip install -q omegaconf einops 2>/dev/null || true
 
 # Téléchargement des modèles LatentSync
-if [ ! -d "checkpoints" ] || [ -z "$(ls -A checkpoints 2>/dev/null)" ]; then
+if [ ! -f "checkpoints/latentsync_unet.pt" ]; then
     log_info "Téléchargement des modèles LatentSync..."
-    pip install -q huggingface_hub 2>/dev/null || true
-    python -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='ByteDance/LatentSync-1.5', local_dir='checkpoints')" 2>/dev/null || {
-        log_warn "Téléchargement HuggingFace échoué, essai alternatif..."
-        huggingface-cli download ByteDance/LatentSync-1.5 --local-dir checkpoints 2>/dev/null || true
-    }
+    huggingface-cli download ByteDance/LatentSync-1.5 --local-dir checkpoints 2>/dev/null || true
 fi
 
 # Exécution LatentSync
 log_info "Génération du lip-sync avec LatentSync..."
-python inference.py \
+python -m scripts.inference \
+    --unet_config_path "configs/unet/stage2.yaml" \
+    --inference_ckpt_path "checkpoints/latentsync_unet.pt" \
+    --inference_steps 20 \
+    --guidance_scale 1.5 \
     --video_path "$SADTALKER_OUTPUT" \
     --audio_path "$WORK_DIR/input/audio.wav" \
-    --output_path "$OUTPUT_DIR/final_output.mp4" \
-    --inference_steps 20
+    --video_out_path "$OUTPUT_DIR/final_output.mp4"
 
 # =============================================================================
 # FINALISATION
