@@ -162,25 +162,26 @@ if [ ! -f "gfpgan/weights/GFPGANv1.4.pth" ]; then
 fi
 
 # Créer un audio silencieux de même durée pour SadTalker (animation sans parole)
-AUDIO_DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$WORK_DIR/input/audio.wav")
-log_info "Durée audio: ${AUDIO_DURATION}s"
+#AUDIO_DURATION=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$WORK_DIR/input/audio.wav")
+#log_info "Durée audio: ${AUDIO_DURATION}s"
 
-log_info "Création audio silencieux pour animation..."
-ffmpeg -y -f lavfi -i anullsrc=r=16000:cl=mono -t "$AUDIO_DURATION" "$WORK_DIR/input/silent.wav" -loglevel quiet
+#log_info "Création audio silencieux pour animation..."
+#ffmpeg -y -f lavfi -i anullsrc=r=16000:cl=mono -t "$AUDIO_DURATION" "$WORK_DIR/input/silent.wav" -loglevel quiet
 
 # Exécution SadTalker avec audio silencieux (juste animation faciale)
+# Exécution SadTalker avec le VRAI audio (mouvements de tête + expressions)
 log_info "Génération de l'animation faciale..."
 python inference.py \
-    --driven_audio "$WORK_DIR/input/silent.wav" \
+    --driven_audio "$WORK_DIR/input/audio.wav" \
     --source_image "$WORK_DIR/input/avatar.$IMAGE_EXT" \
     --result_dir "$OUTPUT_DIR/sadtalker" \
     --preprocess full \
     --enhancer gfpgan \
     --size 512 \
     --expression_scale 1.2 \
-    --pose_style 46 \
+    --pose_style 20 \
     --batch_size 2
-
+    
 # Trouver la vidéo générée
 SADTALKER_OUTPUT=$(find "$OUTPUT_DIR/sadtalker" -name "*.mp4" -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
 log_info "Vidéo SadTalker: $SADTALKER_OUTPUT"
