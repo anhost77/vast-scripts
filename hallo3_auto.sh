@@ -78,22 +78,25 @@ cd "$HALLO_DIR"
 log_info "✅ Code OK"
 
 # =============================================================================
-# ÉTAPE 4: ENVIRONNEMENT PYTHON - FIXER NUMPY D'ABORD
+# ÉTAPE 4: ENVIRONNEMENT PYTHON - VERSIONS COMPATIBLES
 # =============================================================================
 log_step "Configuration environnement Python..."
 
-# CRITIQUE: Fixer numpy AVANT tout autre import
+# CRITIQUE: Mettre à jour PyTorch vers 2.4.0 (requis pour transformers récent + deepspeed)
+log_info "Mise à jour PyTorch vers 2.4.0..."
+pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu118 --quiet
+
+# Fixer numpy
 pip uninstall -y numpy 2>/dev/null || true
 pip install numpy==1.26.4 --quiet
 
-# Vérifier numpy
-python3 -c "import numpy; print(f'NumPy {numpy.__version__}')"
+# Fixer transformers version compatible
+pip install transformers==4.44.0 --quiet
 
-# Vérifier torch
-python3 -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')" || {
-    log_info "Installation PyTorch..."
-    pip install torch==2.4.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121 --quiet
-}
+# Vérifier
+python3 -c "import numpy; print(f'NumPy {numpy.__version__}')"
+python3 -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda.is_available()}')"
+python3 -c "import transformers; print(f'Transformers {transformers.__version__}')"
 
 log_info "✅ Python base OK"
 
@@ -102,30 +105,19 @@ log_info "✅ Python base OK"
 # =============================================================================
 log_step "Installation DeepSpeed et SwissArmyTransformer..."
 
-# Installer deepspeed depuis wheel pré-compilée (pas besoin de nvcc)
-log_info "Installation deepspeed (wheel pré-compilée)..."
-
-# Dépendances de deepspeed
-pip install py-cpuinfo hjson pynvml --quiet 2>/dev/null || true
-
-# Essai 1: wheel pré-compilée CUDA 11.8 Python 3.10
-pip install https://github.com/microsoft/DeepSpeed/releases/download/v0.12.6/deepspeed-0.12.6+cu118-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --quiet 2>/dev/null || \
-# Essai 2: version standard avec DS_BUILD_OPS=0
-DS_BUILD_OPS=0 DS_BUILD_CPU_ADAM=0 DS_BUILD_FUSED_ADAM=0 DS_BUILD_UTILS=0 pip install deepspeed --quiet 2>/dev/null || \
-# Essai 3: version plus ancienne
-pip install deepspeed==0.12.6 --no-build-isolation --quiet 2>/dev/null || true
+# Installer deepspeed compatible avec PyTorch 2.4
+log_info "Installation deepspeed..."
+pip install deepspeed==0.14.4 --quiet 2>/dev/null || \
+pip install deepspeed --quiet 2>/dev/null || true
 
 # Vérifier deepspeed
-if python3 -c "import deepspeed" 2>/dev/null; then
-    log_info "DeepSpeed OK"
-else
-    log_warn "DeepSpeed non installé - tentative alternative..."
-    # Essai 4: installer sans CUDA ops
-    pip install deepspeed --no-cache-dir --quiet 2>/dev/null || true
-fi
+python3 -c "import deepspeed; print('DeepSpeed OK')" || {
+    log_warn "DeepSpeed import failed, trying wheel..."
+    pip install https://github.com/microsoft/DeepSpeed/releases/download/v0.14.4/deepspeed-0.14.4+cu118-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --quiet 2>/dev/null || true
+}
 
 # Dépendances SAT
-pip install icetk icecream --quiet 2>/dev/null || true
+pip install icetk icecream wandb --quiet 2>/dev/null || true
 
 # Installer SAT
 pip install SwissArmyTransformer==0.4.12 --quiet 2>/dev/null || \
