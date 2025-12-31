@@ -40,7 +40,19 @@ cd /workspace/hallo3
 log_step "Fix compatibilité NumPy/Wandb..."
 pip install numpy==1.26.4 wandb==0.17.0 --quiet --force-reinstall 2>/dev/null
 log_info "✅ Compatibilité OK"
-
+log_step "Fix dépendances..."
+pip install --quiet \
+    numpy==1.26.4 \
+    wandb==0.17.0 \
+    albumentations \
+    easydict \
+    matplotlib \
+    onnx \
+    scikit-image \
+    opencv-python-headless \
+    prettytable \
+    2>/dev/null || true
+log_info "✅ Dépendances OK"
 # =============================================================================
 # ÉTAPE 2: TÉLÉCHARGEMENT FICHIERS INPUT
 # =============================================================================
