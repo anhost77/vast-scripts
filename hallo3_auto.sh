@@ -98,51 +98,47 @@ python3 -c "import torch; print(f'PyTorch {torch.__version__}, CUDA: {torch.cuda
 log_info "✅ Python base OK"
 
 # =============================================================================
-# ÉTAPE 5: INSTALLER SAT (SwissArmyTransformer) - CRITIQUE
+# ÉTAPE 5: INSTALLER DEEPSPEED + SAT
 # =============================================================================
-log_step "Installation SwissArmyTransformer (sat)..."
+log_step "Installation DeepSpeed et SwissArmyTransformer..."
 
-# Définir CUDA_HOME pour deepspeed
-export CUDA_HOME=/usr/local/cuda
-if [ ! -d "$CUDA_HOME" ]; then
-    # Chercher CUDA ailleurs
-    for p in /usr/local/cuda-12.1 /usr/local/cuda-12 /usr/local/cuda-11.8 /opt/conda/pkgs/cuda-toolkit; do
-        if [ -d "$p" ]; then
-            export CUDA_HOME=$p
-            break
-        fi
-    done
+# Installer deepspeed depuis wheel pré-compilée (pas besoin de nvcc)
+log_info "Installation deepspeed (wheel pré-compilée)..."
+
+# Dépendances de deepspeed
+pip install py-cpuinfo hjson pynvml --quiet 2>/dev/null || true
+
+# Essai 1: wheel pré-compilée CUDA 11.8 Python 3.10
+pip install https://github.com/microsoft/DeepSpeed/releases/download/v0.12.6/deepspeed-0.12.6+cu118-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl --quiet 2>/dev/null || \
+# Essai 2: version standard avec DS_BUILD_OPS=0
+DS_BUILD_OPS=0 DS_BUILD_CPU_ADAM=0 DS_BUILD_FUSED_ADAM=0 DS_BUILD_UTILS=0 pip install deepspeed --quiet 2>/dev/null || \
+# Essai 3: version plus ancienne
+pip install deepspeed==0.12.6 --no-build-isolation --quiet 2>/dev/null || true
+
+# Vérifier deepspeed
+if python3 -c "import deepspeed" 2>/dev/null; then
+    log_info "DeepSpeed OK"
+else
+    log_warn "DeepSpeed non installé - tentative alternative..."
+    # Essai 4: installer sans CUDA ops
+    pip install deepspeed --no-cache-dir --quiet 2>/dev/null || true
 fi
 
-# Si toujours pas trouvé, utiliser le chemin de nvcc
-if [ ! -d "$CUDA_HOME" ]; then
-    NVCC_PATH=$(which nvcc 2>/dev/null || find /usr -name "nvcc" 2>/dev/null | head -1)
-    if [ -n "$NVCC_PATH" ]; then
-        export CUDA_HOME=$(dirname $(dirname $NVCC_PATH))
-    fi
-fi
-
-export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
-log_info "CUDA_HOME: $CUDA_HOME"
-
-# Installer deepspeed d'abord
-log_info "Installation deepspeed..."
-DS_BUILD_OPS=0 pip install deepspeed --quiet 2>/dev/null || pip install deepspeed --quiet 2>/dev/null || true
-
-# Dépendance de SAT
-pip install icetk --quiet 2>/dev/null || true
+# Dépendances SAT
+pip install icetk icecream --quiet 2>/dev/null || true
 
 # Installer SAT
 pip install SwissArmyTransformer==0.4.12 --quiet 2>/dev/null || \
 pip install git+https://github.com/THUDM/SwissArmyTransformer.git --quiet 2>/dev/null || true
 
-# Vérification FINALE obligatoire
-python3 -c "import sat; print('SAT OK')" || {
-    log_error "ÉCHEC CRITIQUE: SwissArmyTransformer impossible à installer"
+# Vérification FINALE
+python3 -c "import deepspeed; import sat; print('DeepSpeed + SAT OK')" || {
+    log_error "ÉCHEC: DeepSpeed ou SAT non installé"
+    python3 -c "import deepspeed" 2>&1 || log_error "DeepSpeed manquant"
+    python3 -c "import sat" 2>&1 || log_error "SAT manquant"
     exit 1
 }
-log_info "✅ SAT OK"
+log_info "✅ DeepSpeed + SAT OK"
 
 # =============================================================================
 # ÉTAPE 6: AUTRES DÉPENDANCES (en batch pour vitesse)
