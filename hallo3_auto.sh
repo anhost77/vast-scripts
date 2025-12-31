@@ -155,12 +155,39 @@ log_step "=========================================="
 log_step "ÉTAPE 2: Install packages with pip"
 log_step "=========================================="
 
-# Installer les dépendances de compilation pour insightface
-log_info "Installation des pré-requis pour insightface..."
+# Configurer CUDA_HOME pour la compilation
+log_info "Configuration de CUDA_HOME..."
+export CUDA_HOME=/usr/local/cuda
+export PATH=$CUDA_HOME/bin:$PATH
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+
+# Si CUDA n'est pas dans /usr/local/cuda, chercher ailleurs
+if [ ! -d "$CUDA_HOME" ]; then
+    CUDA_PATH=$(dirname $(dirname $(which nvcc 2>/dev/null || echo "/usr/local/cuda/bin/nvcc")))
+    export CUDA_HOME=$CUDA_PATH
+    log_info "CUDA_HOME défini sur: $CUDA_HOME"
+fi
+
+# Installer les dépendances critiques d'abord
+log_info "Installation des pré-requis..."
+pip install omegaconf 2>&1 | tail -3
 pip install onnxruntime-gpu 2>&1 | tail -3
 
+# Installer deepspeed sans compilation (version pré-compilée)
+log_info "Installation de deepspeed (pré-compilé)..."
+pip install deepspeed --no-build-isolation 2>&1 | tail -5 || {
+    log_warn "deepspeed compilation échouée, installation sans CUDA ops..."
+    DS_BUILD_OPS=0 pip install deepspeed 2>&1 | tail -5
+}
+
 log_cmd "pip install -r requirements.txt"
-pip install -r requirements.txt 2>&1 | tail -15
+pip install -r requirements.txt 2>&1 | tail -15 || {
+    log_warn "Certaines dépendances ont échoué, tentative d'installation individuelle..."
+    pip install torch torchvision torchaudio 2>&1 | tail -3
+    pip install transformers accelerate diffusers 2>&1 | tail -3
+    pip install insightface opencv-python 2>&1 | tail -3
+    pip install einops decord imageio 2>&1 | tail -3
+}
 
 log_info "✅ Packages installés"
 
