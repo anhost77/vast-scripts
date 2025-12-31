@@ -163,7 +163,6 @@ NVCC_PATH=$(which nvcc 2>/dev/null || find /usr -name "nvcc" 2>/dev/null | head 
 if [ -n "$NVCC_PATH" ]; then
     export CUDA_HOME=$(dirname $(dirname $NVCC_PATH))
 else
-    # Essayer les chemins standards
     for cuda_path in /usr/local/cuda /usr/local/cuda-12.1 /usr/local/cuda-11.8 /opt/cuda; do
         if [ -d "$cuda_path" ]; then
             export CUDA_HOME=$cuda_path
@@ -173,27 +172,42 @@ else
 fi
 export PATH=$CUDA_HOME/bin:$PATH
 export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
-log_info "CUDA_HOME défini sur: $CUDA_HOME"
+log_info "CUDA_HOME: $CUDA_HOME"
 
-# Installer TOUTES les dépendances manuellement (éviter requirements.txt qui échoue sur deepspeed)
-log_info "Installation des dépendances Python (sans deepspeed)..."
+# Installer TOUTES les dépendances du requirements.txt SAUF deepspeed
+log_info "Installation des dépendances Python..."
 
-pip install omegaconf 2>&1 | tail -2
-pip install imageio imageio-ffmpeg 2>&1 | tail -2
-pip install einops decord opencv-python 2>&1 | tail -2
-pip install transformers accelerate diffusers 2>&1 | tail -2
-pip install insightface onnxruntime-gpu 2>&1 | tail -2
-pip install mediapipe 2>&1 | tail -2
-pip install audio-separator 2>&1 | tail -2
-pip install pytorch-lightning 2>&1 | tail -2
-pip install safetensors sentencepiece 2>&1 | tail -2
-pip install rotary-embedding-torch 2>&1 | tail -2
-pip install SwissArmyTransformer 2>&1 | tail -2
+# Core dependencies
+pip install omegaconf==2.3.0 2>&1 | tail -1
+pip install imageio==2.34.2 imageio-ffmpeg==0.5.1 2>&1 | tail -1
+pip install einops==0.8.0 decord==0.6.0 2>&1 | tail -1
+pip install opencv-python==4.10.0.84 opencv-contrib-python==4.10.0.84 2>&1 | tail -1
+pip install transformers==4.45.2 2>&1 | tail -1
+pip install accelerate 2>&1 | tail -1
+pip install insightface==0.7.3 2>&1 | tail -1
+pip install onnxruntime-gpu==1.19.2 2>&1 | tail -1
+pip install mediapipe==0.10.14 2>&1 | tail -1
+pip install audio-separator==0.21.2 2>&1 | tail -1
+pip install pytorch-lightning==2.3.3 2>&1 | tail -1
+pip install safetensors==0.4.3 2>&1 | tail -1
+pip install sentencepiece==0.2.0 2>&1 | tail -1
+pip install rotary-embedding-torch==0.6.5 2>&1 | tail -1
+pip install SwissArmyTransformer==0.4.12 2>&1 | tail -1
 
-# Installer le reste des requirements sans deepspeed
-log_cmd "pip install -r requirements.txt (sans deepspeed)"
-grep -v "deepspeed" requirements.txt > requirements_no_ds.txt 2>/dev/null || true
-pip install -r requirements_no_ds.txt 2>&1 | tail -10 || true
+# Additional dependencies from requirements.txt
+pip install albumentations==1.4.18 2>&1 | tail -1
+pip install av==12.1.0 pyav==14.0.1 2>&1 | tail -1
+pip install librosa==0.10.2.post1 2>&1 | tail -1
+pip install moviepy==1.0.3 2>&1 | tail -1
+pip install kornia==0.7.3 2>&1 | tail -1
+pip install scikit-image==0.24.0 scikit-learn==1.5.2 2>&1 | tail -1
+pip install soundfile==0.12.1 pydub==0.25.1 2>&1 | tail -1
+pip install wandb==0.17.5 2>&1 | tail -1
+pip install webdataset==0.2.100 2>&1 | tail -1
+pip install ffmpegcv==0.3.15 2>&1 | tail -1
+
+# Skip deepspeed - not needed for inference
+log_info "Skipping deepspeed (not required for inference)"
 
 log_info "✅ Packages installés"
 
