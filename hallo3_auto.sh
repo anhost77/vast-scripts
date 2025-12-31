@@ -131,12 +131,12 @@ log_info "✅ Modèles OK"
 
 # =============================================================================
 # ÉTAPE 7: PRÉPARER INPUT FILE (selon doc: examples/inference/input.txt)
-# Format: image_path audio_path "prompt" scale
+# Format: prompt@@image_path@@audio_path (séparé par @@)
 # =============================================================================
 log_step "Préparation inférence..."
 
 cat > /workspace/input/input.txt << EOF
-/workspace/input/source.png /workspace/input/audio.wav "A person talking naturally" 1.0
+A person talking naturally@@/workspace/input/source.png@@/workspace/input/audio.wav
 EOF
 
 log_info "Input file créé:"
