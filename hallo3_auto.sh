@@ -158,21 +158,35 @@ log_step "=========================================="
 # Configurer CUDA_HOME pour la compilation
 log_info "Configuration de CUDA_HOME..."
 
-# Chercher nvcc
-NVCC_PATH=$(which nvcc 2>/dev/null || find /usr -name "nvcc" 2>/dev/null | head -1)
-if [ -n "$NVCC_PATH" ]; then
-    export CUDA_HOME=$(dirname $(dirname $NVCC_PATH))
-else
-    for cuda_path in /usr/local/cuda /usr/local/cuda-12.1 /usr/local/cuda-11.8 /opt/cuda; do
+# Méthode 1: via nvidia-smi
+if [ -z "$CUDA_HOME" ]; then
+    CUDA_PATH=$(dirname $(dirname $(ldconfig -p | grep libcudart | head -1 | awk '{print $NF}' 2>/dev/null)) 2>/dev/null)
+    if [ -d "$CUDA_PATH" ]; then
+        export CUDA_HOME=$CUDA_PATH
+    fi
+fi
+
+# Méthode 2: chercher dans les chemins standards
+if [ -z "$CUDA_HOME" ] || [ ! -d "$CUDA_HOME" ]; then
+    for cuda_path in /usr/local/cuda-12.1 /usr/local/cuda-12 /usr/local/cuda /opt/conda/lib; do
         if [ -d "$cuda_path" ]; then
             export CUDA_HOME=$cuda_path
             break
         fi
     done
 fi
-export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
-log_info "CUDA_HOME: $CUDA_HOME"
+
+# Méthode 3: utiliser torch pour trouver CUDA
+if [ -z "$CUDA_HOME" ] || [ ! -d "$CUDA_HOME" ]; then
+    TORCH_CUDA=$(python3 -c "import torch; print(torch.utils.cmake_prefix_path)" 2>/dev/null | head -1)
+    if [ -n "$TORCH_CUDA" ]; then
+        export CUDA_HOME=$(dirname $(dirname $TORCH_CUDA))
+    fi
+fi
+
+export PATH=$CUDA_HOME/bin:$PATH 2>/dev/null || true
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH 2>/dev/null || true
+log_info "CUDA_HOME: ${CUDA_HOME:-'(non trouvé, pas grave pour inference)'}"
 
 # Installer TOUTES les dépendances du requirements.txt SAUF deepspeed
 log_info "Installation des dépendances Python..."
@@ -196,7 +210,7 @@ pip install SwissArmyTransformer==0.4.12 2>&1 | tail -1
 
 # Additional dependencies from requirements.txt
 pip install albumentations==1.4.18 2>&1 | tail -1
-pip install av==12.1.0 pyav==14.0.1 2>&1 | tail -1
+pip install av==12.1.0 2>&1 | tail -1
 pip install librosa==0.10.2.post1 2>&1 | tail -1
 pip install moviepy==1.0.3 2>&1 | tail -1
 pip install kornia==0.7.3 2>&1 | tail -1
@@ -231,17 +245,14 @@ else
     log_info "Téléchargement des modèles depuis HuggingFace (peut prendre 15-30 min)..."
     log_cmd "huggingface-cli download fudan-generative-ai/hallo3 --local-dir ./pretrained_models"
     
-    # Utiliser Python (plus fiable)
-    python3 << 'EOF'
+    # Utiliser Python directement (plus fiable que CLI)
+    python3 -c "
 from huggingface_hub import snapshot_download
-print("Téléchargement des modèles Hallo3...")
-print("Cela peut prendre 15-30 minutes (modèles ~20GB+)...")
-snapshot_download(
-    repo_id="fudan-generative-ai/hallo3",
-    local_dir="./pretrained_models"
-)
-print("Téléchargement terminé!")
-EOF
+print('Téléchargement des modèles Hallo3...')
+print('Cela peut prendre 15-30 minutes (modèles ~20GB+)...')
+snapshot_download(repo_id='fudan-generative-ai/hallo3', local_dir='./pretrained_models')
+print('Téléchargement terminé!')
+"
 fi
 
 # Vérification structure (selon doc)
