@@ -9,6 +9,7 @@ IMAGE_URL="$1"
 AUDIO_URL="$2"
 WEBHOOK_URL="$3"
 JOB_ID="$4"
+WEBHOOK_ORCHESTRATOR="$5"
 
 # Couleurs
 RED='\033[0;31m'
@@ -25,7 +26,7 @@ echo "  Hallo3 - Job: $JOB_ID"
 echo "=========================================="
 
 if [ -z "$IMAGE_URL" ] || [ -z "$AUDIO_URL" ]; then
-    log_error "Usage: bash hallo3_run.sh <image_url> <audio_url> <webhook_url> <job_id>"
+    log_error "Usage: bash hallo3_run.sh <image_url> <audio_url> <webhook_url> <job_id> [webhook_orchestrator]"
     exit 1
 fi
 
@@ -33,6 +34,7 @@ log_info "Image: $IMAGE_URL"
 log_info "Audio: $AUDIO_URL"
 log_info "Webhook: $WEBHOOK_URL"
 log_info "Job ID: $JOB_ID"
+log_info "Orchestrator: $WEBHOOK_ORCHESTRATOR"
 
 cd /workspace/hallo3
 
@@ -98,6 +100,16 @@ if [ -n "$VIDEO_FILE" ] && [ -f "$VIDEO_FILE" ]; then
         
         log_info "✅ Webhook envoyé"
     fi
+    
+    # Signal à l'orchestrateur
+    if [ -n "$WEBHOOK_ORCHESTRATOR" ]; then
+        log_step "Signal fin de job à l'orchestrateur..."
+        INSTANCE_ID=$(echo $CONTAINER_ID | sed 's/C\.//')
+        curl -s -X POST "$WEBHOOK_ORCHESTRATOR" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\":\"job_complete\",\"job_id\":\"$JOB_ID\",\"instance_id\":\"$INSTANCE_ID\",\"success\":true}"
+        log_info "✅ Orchestrateur notifié"
+    fi
 else
     log_error "Aucune vidéo générée!"
     tail -20 /workspace/hallo3_inference.log
@@ -107,6 +119,16 @@ else
         curl -s -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "{\"status\":\"error\",\"job_id\":\"$JOB_ID\",\"message\":\"No video generated\",\"log\":\"$ERROR_LOG\"}"
+    fi
+    
+    # Signal erreur à l'orchestrateur
+    if [ -n "$WEBHOOK_ORCHESTRATOR" ]; then
+        log_step "Signal erreur à l'orchestrateur..."
+        INSTANCE_ID=$(echo $CONTAINER_ID | sed 's/C\.//')
+        curl -s -X POST "$WEBHOOK_ORCHESTRATOR" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\":\"job_complete\",\"job_id\":\"$JOB_ID\",\"instance_id\":\"$INSTANCE_ID\",\"success\":false}"
+        log_info "✅ Orchestrateur notifié (erreur)"
     fi
     exit 1
 fi
