@@ -41,48 +41,16 @@ log_info "✅ Dossiers OK"
 # ÉTAPE 3: TÉLÉCHARGER MODÈLES SI MANQUANTS
 # =============================================================================
 log_step "Vérification/Téléchargement modèles..."
-if [ ! -d "/workspace/hallo3/pretrained_models/hallo3" ]; then
+if [ ! -f "/workspace/hallo3/pretrained_models/hallo3/latest" ]; then
     log_info "Modèles manquants, téléchargement en cours..."
     
     cd /workspace/hallo3
     
-    # Télécharger les modèles via le script officiel ou huggingface
-    if [ -f "scripts/download_models.sh" ]; then
-        bash scripts/download_models.sh
-    else
-        # Alternative: téléchargement manuel depuis HuggingFace
-        pip install -q huggingface_hub
-        
-        python3 << 'EOF'
-from huggingface_hub import snapshot_download
-import os
-# Dossier destination
-models_dir = "/workspace/hallo3/pretrained_models"
-os.makedirs(models_dir, exist_ok=True)
-# Télécharger les modèles Hallo3
-repos = [
-    ("fudan-generative-ai/hallo3", "hallo3"),
-    ("stabilityai/stable-video-diffusion-img2vid-xt", "svd"),
-    ("THUDM/CogVideoX-5b-I2V", "cogvideox-5b-i2v-sat"),
-    ("google/t5-v1_1-xxl", "t5-v1_1-xxl"),
-]
-for repo, folder in repos:
-    dest = os.path.join(models_dir, folder)
-    if not os.path.exists(dest):
-        print(f"Downloading {repo}...")
-        snapshot_download(repo_id=repo, local_dir=dest, local_dir_use_symlinks=False)
-        print(f"✅ {folder} downloaded")
-    else:
-        print(f"✅ {folder} already exists")
-# Face analysis models
-face_dir = os.path.join(models_dir, "face_analysis/models")
-os.makedirs(face_dir, exist_ok=True)
-# Audio separator
-audio_dir = os.path.join(models_dir, "audio_separator")
-os.makedirs(audio_dir, exist_ok=True)
-print("✅ All models ready")
-EOF
-    fi
+    # Supprimer dossier incomplet si existe
+    rm -rf pretrained_models
+    
+    # Télécharger TOUS les modèles avec huggingface-cli (comme l'image Docker)
+    huggingface-cli download fudan-generative-ai/hallo3 --local-dir ./pretrained_models
     
     log_info "✅ Modèles téléchargés"
 else
