@@ -9,6 +9,7 @@ IMAGE_URL="$1"
 AUDIO_URL="$2"
 WEBHOOK_URL="$3"
 JOB_ID="$4"
+INSTANCE_ID="$5"
 
 # Couleurs
 RED='\033[0;31m'
@@ -25,7 +26,7 @@ echo "  Hallo3 - Job: $JOB_ID"
 echo "=========================================="
 
 if [ -z "$IMAGE_URL" ] || [ -z "$AUDIO_URL" ]; then
-    log_error "Usage: bash hallo3_run.sh <image_url> <audio_url> <webhook_url> <job_id>"
+    log_error "Usage: bash hallo3_run.sh <image_url> <audio_url> <webhook_url> <job_id> <instance_id>"
     exit 1
 fi
 
@@ -33,6 +34,7 @@ log_info "Image: $IMAGE_URL"
 log_info "Audio: $AUDIO_URL"
 log_info "Webhook: $WEBHOOK_URL"
 log_info "Job ID: $JOB_ID"
+log_info "Instance ID: $INSTANCE_ID"
 
 cd /workspace/hallo3
 
@@ -114,7 +116,6 @@ fi
 # ÉTAPE 6: RAPPELER L'ORCHESTRATEUR POUR LE PROCHAIN JOB
 # =============================================================================
 log_step "Signal prêt pour prochain job..."
-INSTANCE_ID=$(echo $CONTAINER_ID | sed 's/C\.//')
 curl -s -X POST "https://n8n-perso.hosting-fr.net/webhook/24b50962-c5b4-48f2-8610-7388991a626c" \
     -H "Content-Type: application/json" \
     -d "{\"status\":\"ready\",\"instance_id\":\"$INSTANCE_ID\"}"
