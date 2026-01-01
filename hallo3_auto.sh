@@ -35,11 +35,8 @@ log_info "Webhook: $WEBHOOK_URL"
 cd /workspace/hallo3
 
 # =============================================================================
-# ÉTAPE 1: FIX NUMPY/WANDB (compatibilité)
+# ÉTAPE 1: FIX DÉPENDANCES
 # =============================================================================
-log_step "Fix compatibilité NumPy/Wandb..."
-pip install numpy==1.26.4 wandb==0.17.0 --quiet --force-reinstall 2>/dev/null
-log_info "✅ Compatibilité OK"
 log_step "Fix dépendances..."
 pip install --quiet \
     numpy==1.26.4 \
@@ -53,6 +50,7 @@ pip install --quiet \
     prettytable \
     2>/dev/null || true
 log_info "✅ Dépendances OK"
+
 # =============================================================================
 # ÉTAPE 2: TÉLÉCHARGEMENT FICHIERS INPUT
 # =============================================================================
@@ -85,7 +83,7 @@ log_step "Lancement génération vidéo..."
 bash scripts/inference_long_batch.sh /workspace/input/input.txt /workspace/output 2>&1 | tee /workspace/hallo3_inference.log
 
 # =============================================================================
-# ÉTAPE 5: RÉCUPÉRER RÉSULTAT
+# ÉTAPE 5: RÉCUPÉRER RÉSULTAT ET ENVOYER
 # =============================================================================
 log_step "Recherche vidéo générée..."
 
@@ -94,18 +92,17 @@ VIDEO_FILE=$(find /workspace/output -name "*.mp4" -type f -printf '%T@ %p\n' 2>/
 if [ -n "$VIDEO_FILE" ] && [ -f "$VIDEO_FILE" ]; then
     log_info "✅ Vidéo: $VIDEO_FILE"
     VIDEO_SIZE=$(stat -c%s "$VIDEO_FILE")
+    log_info "Taille: $(numfmt --to=iec $VIDEO_SIZE)"
     
     if [ -n "$WEBHOOK_URL" ]; then
-        if [ "$VIDEO_SIZE" -lt 52428800 ]; then
-            VIDEO_BASE64=$(base64 -w 0 "$VIDEO_FILE")
-            curl -s -X POST "$WEBHOOK_URL" \
-                -H "Content-Type: application/json" \
-                -d "{\"status\":\"success\",\"video_base64\":\"$VIDEO_BASE64\",\"filename\":\"$(basename $VIDEO_FILE)\"}"
-        else
-            curl -s -X POST "$WEBHOOK_URL" \
-                -H "Content-Type: application/json" \
-                -d "{\"status\":\"success\",\"video_path\":\"$VIDEO_FILE\",\"size\":$VIDEO_SIZE}"
-        fi
+        log_step "Envoi vidéo au webhook..."
+        
+        curl -s -X POST "$WEBHOOK_URL" \
+            -F "status=success" \
+            -F "filename=$(basename $VIDEO_FILE)" \
+            -F "size=$VIDEO_SIZE" \
+            -F "video=@$VIDEO_FILE;type=video/mp4"
+        
         log_info "✅ Webhook envoyé"
     fi
 else
@@ -113,7 +110,7 @@ else
     tail -20 /workspace/hallo3_inference.log
     
     if [ -n "$WEBHOOK_URL" ]; then
-        ERROR_LOG=$(tail -10 /workspace/hallo3_inference.log | tr '\n' ' ' | sed 's/"/\\"/g')
+        ERROR_LOG=$(tail -10 /workspace/hallo3_inference.log | tr '\n' ' ' | sed 's/"/\\"/g' | head -c 500)
         curl -s -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
             -d "{\"status\":\"error\",\"message\":\"No video generated\",\"log\":\"$ERROR_LOG\"}"
