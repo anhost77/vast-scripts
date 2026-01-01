@@ -108,7 +108,8 @@ fi
 # =============================================================================
 if [ -n "$WEBHOOK_READY" ]; then
     log_step "Envoi webhook ready..."
-    INSTANCE_ID=$(hostname)
+    #INSTANCE_ID=$(hostname)
+    INSTANCE_ID=$(echo $CONTAINER_ID | sed 's/C\.//')
     curl -s -X POST "$WEBHOOK_READY" \
         -H "Content-Type: application/json" \
         -d "{\"status\":\"ready\",\"instance_id\":\"$INSTANCE_ID\"}"
