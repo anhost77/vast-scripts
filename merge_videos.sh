@@ -90,7 +90,8 @@ for url in "${URLS[@]}"; do
         log_error "  ❌ Échec téléchargement: $url"
     fi
     
-    ((i++))
+    #((i++))
+    i=$((i+1))
 done
 
 # Vérifier combien de vidéos téléchargées
