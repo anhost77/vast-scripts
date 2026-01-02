@@ -51,7 +51,8 @@ echo "$PROJECT" > /workspace/project_name.txt
 
 # Récupérer instance_id depuis variable d'environnement Vast.ai
 # Récupérer instance_id depuis le hostname (C.29435473)
-INSTANCE_ID=$(hostname | sed 's/C\.//')
+# Récupérer instance_id depuis le fichier Vast.ai
+INSTANCE_ID=$(cat ~/.vast_containerlabel | sed 's/C\.//')
 echo "Instance ID: $INSTANCE_ID"
 
 # Envoyer webhook ready
