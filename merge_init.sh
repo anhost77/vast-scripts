@@ -50,7 +50,8 @@ mkdir -p /workspace/input /workspace/output
 echo "$PROJECT" > /workspace/project_name.txt
 
 # Récupérer instance_id
-INSTANCE_ID=$(hostname | sed 's/C\.//')
+# Récupérer instance_id (le vrai ID Vast.ai)
+INSTANCE_ID=$(echo $CONTAINER_ID | sed 's/C\.//')
 
 # Envoyer webhook ready
 if [ -n "$WEBHOOK_READY" ]; then
