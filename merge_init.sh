@@ -4,13 +4,15 @@
 # =============================================================================
 
 WEBHOOK_READY="$1"
+PROJECT="$2"
 
 echo "=========================================="
 echo "  Merge Videos - Initialisation"
+echo "  Projet: $PROJECT"
 echo "=========================================="
 
 # Installer dépendances
-apt-get update -qq && apt-get install -y -qq ffmpeg git wget curl
+apt-get update -qq && apt-get install -y -qq ffmpeg git wget curl bc
 
 # Installer RIFE
 cd /workspace
@@ -29,11 +31,17 @@ echo "✅ RIFE installé"
 # Créer dossiers
 mkdir -p /workspace/input /workspace/output
 
+# Sauvegarder le projet pour merge_videos.sh
+echo "$PROJECT" > /workspace/project_name.txt
+
+# Récupérer instance_id
+INSTANCE_ID=$(echo $CONTAINER_ID | sed 's/C\.//')
+
 # Envoyer webhook ready
 if [ -n "$WEBHOOK_READY" ]; then
     curl -s -X POST "$WEBHOOK_READY" \
         -H "Content-Type: application/json" \
-        -d "{\"status\":\"ready\",\"type\":\"merge\"}"
+        -d "{\"status\":\"ready\",\"instance_id\":\"$INSTANCE_ID\",\"project\":\"$PROJECT\"}"
     echo "✅ Webhook envoyé"
 fi
 
