@@ -188,32 +188,70 @@ OUTPUT_SIZE=$(stat -c%s "$OUTPUT_FILE")
 log_info "✅ Vidéo assemblée: $OUTPUT_FILE ($(numfmt --to=iec $OUTPUT_SIZE))"
 
 # =============================================================================
-# ÉTAPE 6: UPSCALE x4 (Real-ESRGAN)
+# ÉTAPE 6: UPSCALE x4 (Real-ESRGAN GPU)
 # =============================================================================
-log_step "Upscale x4 (Real-ESRGAN)..."
+log_step "Upscale x4 (Real-ESRGAN GPU)..."
 
-cd "$ESRGAN_DIR"
+# Patch basicsr si nécessaire
+sed -i 's/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/' /usr/local/lib/python3.10/dist-packages/basicsr/data/degradations.py 2>/dev/null || true
+
+# Installer realesrgan si pas présent
+pip3 show realesrgan > /dev/null 2>&1 || pip3 install realesrgan --no-deps
+
+# Télécharger le modèle si pas présent
+mkdir -p /workspace/Real-ESRGAN/weights
+if [ ! -f "/workspace/Real-ESRGAN/weights/RealESRGAN_x4plus.pth" ]; then
+    wget -q -O /workspace/Real-ESRGAN/weights/RealESRGAN_x4plus.pth "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"
+fi
 
 # Extraire les frames
 log_info "Extraction des frames..."
+mkdir -p "$WORK_DIR/frames" "$WORK_DIR/frames_up"
 ffmpeg -i "$OUTPUT_FILE" -qscale:v 1 -qmin 1 -qmax 1 -vsync 0 "$WORK_DIR/frames/frame%08d.png" 2>/dev/null
 
 FRAME_COUNT=$(ls -1 "$WORK_DIR/frames"/*.png 2>/dev/null | wc -l)
 log_info "  $FRAME_COUNT frames extraites"
 
-# Upscale chaque frame
-log_info "Upscale des frames (x4)..."
-python inference_realesrgan.py \
-    -i "$WORK_DIR/frames" \
-    -o "$WORK_DIR/frames_up" \
-    -n realesr-animevideov3 \
-    -s 4 \
-    --suffix "" \
-    2>/dev/null
+# Upscale avec Python/CUDA
+log_info "Upscale des frames (GPU)..."
+cd /workspace
+python3 << PYEOF
+from realesrgan import RealESRGANer
+from basicsr.archs.rrdbnet_arch import RRDBNet
+import cv2
+import os
+
+model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
+upsampler = RealESRGANer(
+    scale=4,
+    model_path='/workspace/Real-ESRGAN/weights/RealESRGAN_x4plus.pth',
+    model=model,
+    tile=0,
+    tile_pad=10,
+    pre_pad=0,
+    half=True
+)
+
+frames_dir = '$WORK_DIR/frames'
+output_dir = '$WORK_DIR/frames_up'
+
+frames = sorted([f for f in os.listdir(frames_dir) if f.endswith('.png')])
+total = len(frames)
+
+for i, frame in enumerate(frames):
+    img = cv2.imread(os.path.join(frames_dir, frame), cv2.IMREAD_UNCHANGED)
+    output, _ = upsampler.enhance(img, outscale=4)
+    cv2.imwrite(os.path.join(output_dir, frame), output)
+    if (i+1) % 100 == 0 or i == total-1:
+        print(f"[{i+1}/{total}] frames upscalées")
+
+print("✅ Upscale terminé")
+PYEOF
 
 # Récupérer le FPS original
-ORIGINAL_FPS=$(ffprobe -v error -select_streams v -of default=noprint_wrappers=1:nokey=1 -show_entries stream=r_frame_rate "$OUTPUT_FILE" | bc -l 2>/dev/null || echo "25")
-log_info "  FPS original: $ORIGINAL_FPS"
+ORIGINAL_FPS=$(ffprobe -v error -select_streams v -of default=noprint_wrappers=1:nokey=1 -show_entries stream=r_frame_rate "$OUTPUT_FILE" 2>/dev/null | head -1)
+ORIGINAL_FPS=$(echo "scale=2; $ORIGINAL_FPS" | bc 2>/dev/null || echo "25")
+log_info "  FPS: $ORIGINAL_FPS"
 
 # Recréer la vidéo upscalée
 log_info "Reconstruction vidéo..."
@@ -223,7 +261,7 @@ ffmpeg -y -framerate $ORIGINAL_FPS -i "$WORK_DIR/frames_up/frame%08d.png" \
     -c:a copy \
     "$UPSCALED_FILE" 2>/dev/null
 
-if [ -f "$UPSCALED_FILE" ]; then
+if [ -f "$UPSCALED_FILE" ] && [ -s "$UPSCALED_FILE" ]; then
     UPSCALED_SIZE=$(stat -c%s "$UPSCALED_FILE")
     log_info "✅ Vidéo upscalée: $UPSCALED_FILE ($(numfmt --to=iec $UPSCALED_SIZE))"
     FINAL_OUTPUT="$UPSCALED_FILE"
@@ -231,7 +269,6 @@ else
     log_error "❌ Upscale échoué, utilisation de la vidéo non-upscalée"
     FINAL_OUTPUT="$OUTPUT_FILE"
 fi
-
 # =============================================================================
 # ÉTAPE 7: ENVOYER AU WEBHOOK
 # =============================================================================
