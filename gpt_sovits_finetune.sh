@@ -2,18 +2,17 @@
 # GPT-SoVITS Fine-tuning Script for Vast.ai
 # Usage: bash gpt_sovits_finetune.sh <WEBHOOK_URL> <PROJECT_NAME>
 
-# Ne pas utiliser set -e pour éviter les arrêts silencieux
-# set -e
-
 WEBHOOK_URL="${1:-}"
 PROJECT_NAME="${2:-voice_model}"
-AUDIO_URL="https://raw.githubusercontent.com/anhost77/vast-scripts/main/parole.mp3"
+
+# Google Drive file ID
+GDRIVE_FILE_ID="1u0uwukYeufwmac9qyCHTxgtH0ejmX35T"
 
 echo "============================================"
 echo "GPT-SoVITS Fine-tuning Script"
 echo "============================================"
 echo "Project: $PROJECT_NAME"
-echo "Audio URL: $AUDIO_URL"
+echo "Audio: Google Drive ID $GDRIVE_FILE_ID"
 echo "Webhook: $WEBHOOK_URL"
 echo "============================================"
 
@@ -31,7 +30,8 @@ echo "Instance ID: $INSTANCE_ID"
 echo ""
 echo "[1/8] Installing system dependencies..."
 apt-get update -qq
-apt-get install -y -qq ffmpeg git wget curl unzip sox libsox-fmt-all aria2 > /dev/null 2>&1
+apt-get install -y -qq ffmpeg git wget curl unzip sox libsox-fmt-all > /dev/null 2>&1
+pip install -q gdown 2>/dev/null
 echo "✓ System dependencies installed"
 
 # ============================================
@@ -66,7 +66,7 @@ for attempt in 1 2 3; do
 done
 
 # Additional dependencies
-pip install -q funasr modelscope faster-whisper 2>/dev/null
+pip install -q funasr modelscope faster-whisper gdown 2>/dev/null
 
 echo "✓ Python dependencies installed"
 
@@ -81,28 +81,19 @@ cd /workspace/GPT-SoVITS
 # Create directories
 mkdir -p GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large
 mkdir -p GPT_SoVITS/pretrained_models/chinese-hubert-base
-mkdir -p tools/asr/models
+mkdir -p GPT_SoVITS/pretrained_models/gsv-v2final-pretrained
 
 echo "Downloading GPT model..."
 if [ ! -f "GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt" ]; then
-    mkdir -p GPT_SoVITS/pretrained_models/gsv-v2final-pretrained
     wget -q --show-progress -O "GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt" \
-        "https://huggingface.co/lj1995/GPT-SoVITS/resolve/main/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch%3D12-step%3D369668.ckpt" || {
-        echo "⚠️ GPT model download failed, trying alternative..."
-        wget -q --show-progress -O "GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch=12-step=369668.ckpt" \
-            "https://huggingface.co/lj1995/GPT-SoVITS/resolve/main/s1bert25hz-2kh-longer-epoch%3D68e-step%3D50232.ckpt" || true
-    }
+        "https://huggingface.co/lj1995/GPT-SoVITS/resolve/main/gsv-v2final-pretrained/s1bert25hz-5kh-longer-epoch%3D12-step%3D369668.ckpt" || true
 fi
 echo "✓ GPT model"
 
 echo "Downloading SoVITS model..."
 if [ ! -f "GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth" ]; then
     wget -q --show-progress -O "GPT_SoVITS/pretrained_models/gsv-v2final-pretrained/s2G2333k.pth" \
-        "https://huggingface.co/lj1995/GPT-SoVITS/resolve/main/gsv-v2final-pretrained/s2G2333k.pth" || {
-        echo "⚠️ SoVITS model download failed, trying alternative..."
-        wget -q --show-progress -O "GPT_SoVITS/pretrained_models/s2G488k.pth" \
-            "https://huggingface.co/lj1995/GPT-SoVITS/resolve/main/s2G488k.pth" || true
-    }
+        "https://huggingface.co/lj1995/GPT-SoVITS/resolve/main/gsv-v2final-pretrained/s2G2333k.pth" || true
 fi
 echo "✓ SoVITS model"
 
@@ -129,26 +120,46 @@ cd /workspace/GPT-SoVITS
 echo "✓ Pre-trained models downloaded"
 
 # ============================================
-# STEP 5: Download Audio File
+# STEP 5: Download Audio File from Google Drive
 # ============================================
 echo ""
-echo "[5/8] Downloading audio file..."
+echo "[5/8] Downloading audio file from Google Drive..."
 mkdir -p /workspace/GPT-SoVITS/raw_audio
 cd /workspace/GPT-SoVITS/raw_audio
 
-echo "Downloading from: $AUDIO_URL"
-wget -q --show-progress "$AUDIO_URL" -O "parole.mp3" || {
-    echo "❌ Failed to download audio file!"
-    exit 1
+echo "Downloading file ID: $GDRIVE_FILE_ID"
+
+# Method 1: gdown (most reliable)
+gdown "https://drive.google.com/uc?id=${GDRIVE_FILE_ID}" -O parole.mp3 || {
+    echo "gdown failed, trying curl method..."
+    
+    # Method 2: curl with confirmation bypass
+    curl -L "https://drive.google.com/uc?export=download&id=${GDRIVE_FILE_ID}&confirm=t" -o parole.mp3 || {
+        echo "curl failed, trying wget method..."
+        
+        # Method 3: wget
+        wget --no-check-certificate "https://drive.google.com/uc?export=download&id=${GDRIVE_FILE_ID}&confirm=t" -O parole.mp3
+    }
 }
 
 # Check file size
-FILE_SIZE=$(stat -f%z "parole.mp3" 2>/dev/null || stat -c%s "parole.mp3" 2>/dev/null || echo "0")
-echo "File size: $FILE_SIZE bytes"
+FILE_SIZE=$(stat -c%s "parole.mp3" 2>/dev/null || stat -f%z "parole.mp3" 2>/dev/null || echo "0")
+echo "File size: $FILE_SIZE bytes ($(echo "scale=2; $FILE_SIZE/1024/1024" | bc) MB)"
 
-if [ "$FILE_SIZE" -lt 10000 ]; then
-    echo "❌ Audio file too small or download failed!"
-    cat parole.mp3
+if [ "$FILE_SIZE" -lt 1000000 ]; then
+    echo "⚠️ File seems too small, might be a download error page"
+    echo "First 500 bytes of file:"
+    head -c 500 parole.mp3
+    echo ""
+    echo "Trying alternative download method with gdown..."
+    pip install -q --upgrade gdown
+    gdown --fuzzy "https://drive.google.com/file/d/${GDRIVE_FILE_ID}/view" -O parole.mp3
+    FILE_SIZE=$(stat -c%s "parole.mp3" 2>/dev/null || echo "0")
+    echo "New file size: $FILE_SIZE bytes"
+fi
+
+if [ "$FILE_SIZE" -lt 1000000 ]; then
+    echo "❌ Audio file download failed! Size: $FILE_SIZE bytes"
     exit 1
 fi
 
@@ -230,21 +241,22 @@ project = os.environ.get('PROJECT_NAME', 'voice_model')
 wavs_dir = f"data/{project}/wavs"
 output_file = f"data/{project}/transcription.list"
 
-print("Loading Whisper model (large-v3)...")
+print("Loading Whisper model...")
 try:
     from faster_whisper import WhisperModel
     model = WhisperModel("large-v3", device="cuda", compute_type="float16")
+    print("Using GPU (large-v3)")
 except Exception as e:
-    print(f"GPU Whisper failed: {e}")
-    print("Trying CPU mode...")
+    print(f"GPU failed: {e}")
+    print("Trying CPU mode with medium model...")
     from faster_whisper import WhisperModel
-    model = WhisperModel("base", device="cpu", compute_type="int8")
+    model = WhisperModel("medium", device="cpu", compute_type="int8")
 
 wav_files = sorted(glob.glob(f"{wavs_dir}/*.wav"))
 print(f"Transcribing {len(wav_files)} audio files...")
 
 transcriptions = []
-for wav_file in wav_files:
+for i, wav_file in enumerate(wav_files):
     try:
         segments, info = model.transcribe(wav_file, language="fr", beam_size=5)
         text = " ".join([seg.text.strip() for seg in segments])
@@ -253,7 +265,7 @@ for wav_file in wav_files:
         basename = os.path.basename(wav_file)
         line = f"{wavs_dir}/{basename}|{project}|FR|{text}"
         transcriptions.append(line)
-        print(f"  {basename}: {text[:50]}...")
+        print(f"  [{i+1}/{len(wav_files)}] {basename}: {text[:60]}...")
     except Exception as e:
         print(f"  Error transcribing {wav_file}: {e}")
 
@@ -268,29 +280,18 @@ PYTHON_ASR
 echo "✓ Transcription complete"
 
 # ============================================
-# STEP 8: Fine-tuning (Simplified)
+# STEP 8: Package Dataset
 # ============================================
 echo ""
-echo "[8/8] Starting fine-tuning..."
+echo "[8/8] Packaging dataset..."
 cd /workspace/GPT-SoVITS
 
 # Show what we have
 echo "Dataset contents:"
-ls -la "data/${PROJECT_NAME}/wavs/" | head -10
+ls -la "data/${PROJECT_NAME}/wavs/" | head -20
 echo ""
-echo "Transcription file:"
+echo "Transcription preview:"
 head -5 "data/${PROJECT_NAME}/transcription.list" || echo "No transcription file"
-
-# For now, skip actual training and just package what we have
-echo ""
-echo "⚠️ Skipping actual training (requires WebUI or complex setup)"
-echo "Packaging dataset for manual training..."
-
-# ============================================
-# Package Dataset
-# ============================================
-echo ""
-echo "Packaging dataset..."
 
 OUTPUT_DIR="/workspace/GPT-SoVITS/output/${PROJECT_NAME}"
 mkdir -p "$OUTPUT_DIR"
@@ -306,17 +307,16 @@ cat > "$OUTPUT_DIR/model_info.json" << EOF
     "project": "${PROJECT_NAME}",
     "created": "$(date -Iseconds)",
     "instance_id": "${INSTANCE_ID}",
-    "audio_source": "${AUDIO_URL}",
+    "audio_source": "gdrive:${GDRIVE_FILE_ID}",
     "audio_duration_seconds": ${DURATION:-0},
     "language": "fr",
-    "status": "dataset_prepared",
-    "next_steps": "Run GPT-SoVITS WebUI for actual fine-tuning"
+    "status": "dataset_prepared"
 }
 EOF
 
 # Create zip archive
 cd /workspace/GPT-SoVITS/output
-zip -r "${PROJECT_NAME}_dataset.zip" "${PROJECT_NAME}/"
+zip -qr "${PROJECT_NAME}_dataset.zip" "${PROJECT_NAME}/"
 DATASET_ZIP="/workspace/GPT-SoVITS/output/${PROJECT_NAME}_dataset.zip"
 
 echo "✓ Dataset packaged: $DATASET_ZIP"
@@ -329,7 +329,6 @@ if [ -n "$WEBHOOK_URL" ]; then
     echo ""
     echo "Sending webhook notification..."
     
-    # Send dataset file via multipart form
     curl -s -X POST "$WEBHOOK_URL" \
         -F "instance_id=${INSTANCE_ID}" \
         -F "project=${PROJECT_NAME}" \
@@ -350,17 +349,7 @@ echo "============================================"
 echo "Project: ${PROJECT_NAME}"
 echo "Instance: ${INSTANCE_ID}"
 echo "Audio Duration: ${DURATION:-unknown}s"
-echo ""
-echo "Output files:"
-ls -lh "$OUTPUT_DIR/" 2>/dev/null || echo "No output files found"
+echo "Segments: $(ls -1 data/${PROJECT_NAME}/wavs/*.wav 2>/dev/null | wc -l)"
 echo ""
 echo "Dataset archive: ${DATASET_ZIP}"
 echo "============================================"
-echo ""
-echo "NEXT STEPS:"
-echo "1. Download the dataset zip"
-echo "2. Run GPT-SoVITS WebUI locally or on GPU instance"
-echo "3. Use the prepared audio segments and transcriptions"
-echo "============================================"
-# Keep container alive for manual inspection (optional)
-# tail -f /dev/null
