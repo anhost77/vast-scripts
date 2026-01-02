@@ -1,16 +1,16 @@
 #!/bin/bash
 # =============================================================================
-# CoquiTTS XTTS v2 - Installation et génération audio
+# CoquiTTS XTTS v2 - Installation et generation audio
 # =============================================================================
 # Usage: 
-#   bash coqui_tts.sh --webhook "https://..." --voice "GDRIVE_ID" --text "fichier.txt"
-#   bash coqui_tts.sh --webhook "https://..." --voice "GDRIVE_ID" --text-content "Texte à générer"
+#   bash coqui_tts.sh --webhook "https://..." --text-content "Texte a generer"
+#   bash coqui_tts.sh --webhook "https://..." --text "fichier.txt" --speed 0.9
 # =============================================================================
 
 set -e
 
 # =============================================================================
-# CONFIGURATION PAR DÉFAUT
+# CONFIGURATION PAR DEFAUT
 # =============================================================================
 WEBHOOK_URL=""
 VOICE_GDRIVE_ID="1u0uwukYeufwmac9qyCHTxgtH0ejmX35T"
@@ -20,6 +20,15 @@ OUTPUT_FORMAT="mp3"
 WORK_DIR="/workspace/coqui-tts"
 LANGUAGE="fr"
 SKIP_INSTALL=false
+
+# Parametres de qualite audio
+SPEED="0.9"
+TEMPERATURE="0.65"
+TOP_K="50"
+TOP_P="0.85"
+REPETITION_PENALTY="5.0"
+LENGTH_PENALTY="1.0"
+SPLIT_SENTENCES="True"
 
 # =============================================================================
 # PARSING DES ARGUMENTS
@@ -58,19 +67,57 @@ while [[ $# -gt 0 ]]; do
             SKIP_INSTALL=true
             shift
             ;;
+        --speed)
+            SPEED="$2"
+            shift 2
+            ;;
+        --temperature)
+            TEMPERATURE="$2"
+            shift 2
+            ;;
+        --top-k)
+            TOP_K="$2"
+            shift 2
+            ;;
+        --top-p)
+            TOP_P="$2"
+            shift 2
+            ;;
+        --repetition-penalty)
+            REPETITION_PENALTY="$2"
+            shift 2
+            ;;
+        --length-penalty)
+            LENGTH_PENALTY="$2"
+            shift 2
+            ;;
+        --no-split)
+            SPLIT_SENTENCES="False"
+            shift
+            ;;
         --help)
             echo "Usage: bash coqui_tts.sh [OPTIONS]"
             echo ""
-            echo "Options:"
-            echo "  --webhook URL        URL du webhook pour envoyer le résultat"
-            echo "  --voice ID           Google Drive ID du fichier audio de référence"
-            echo "  --text FILE          Fichier texte contenant le script à générer"
-            echo "  --text-content TEXT  Texte direct à générer (alternative à --text)"
-            echo "  --format FORMAT      Format de sortie: mp3 ou wav (défaut: mp3)"
-            echo "  --language LANG      Langue: fr, en, es, de, etc. (défaut: fr)"
-            echo "  --workdir DIR        Répertoire de travail (défaut: /workspace/coqui-tts)"
-            echo "  --skip-install       Passer l'installation si déjà fait"
-            echo "  --help               Afficher cette aide"
+            echo "Options principales:"
+            echo "  --webhook URL          URL du webhook pour envoyer le resultat"
+            echo "  --voice ID             Google Drive ID du fichier audio de reference"
+            echo "  --text FILE            Fichier texte contenant le script a generer"
+            echo "  --text-content TEXT    Texte direct a generer (alternative a --text)"
+            echo "  --format FORMAT        Format de sortie: mp3 ou wav (defaut: mp3)"
+            echo "  --language LANG        Langue: fr, en, es, de, etc. (defaut: fr)"
+            echo "  --workdir DIR          Repertoire de travail (defaut: /workspace/coqui-tts)"
+            echo "  --skip-install         Passer l'installation si deja fait"
+            echo ""
+            echo "Parametres de qualite audio:"
+            echo "  --speed VALUE          Vitesse: 0.8=lent, 1.0=normal, 1.2=rapide (defaut: 0.9)"
+            echo "  --temperature VALUE    Expressivite: 0.5=stable, 0.75=normal, 0.9=expressif (defaut: 0.65)"
+            echo "  --top-k VALUE          Diversite tokens: 10-100 (defaut: 50)"
+            echo "  --top-p VALUE          Nucleus sampling: 0.5-1.0 (defaut: 0.85)"
+            echo "  --repetition-penalty   Penalite repetition: 1.0-10.0 (defaut: 5.0)"
+            echo "  --length-penalty       Penalite longueur: 0.5-2.0 (defaut: 1.0)"
+            echo "  --no-split             Desactiver le decoupage en phrases"
+            echo ""
+            echo "  --help                 Afficher cette aide"
             exit 0
             ;;
         *)
@@ -87,7 +134,7 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"; }
 error() { echo "[ERROR] $1" >&2; exit 1; }
 
 # =============================================================================
-# VÉRIFICATIONS
+# VERIFICATIONS
 # =============================================================================
 if [ -z "$WEBHOOK_URL" ]; then
     error "L'URL du webhook est obligatoire (--webhook)"
@@ -98,54 +145,54 @@ if [ -z "$TEXT_FILE" ] && [ -z "$TEXT_CONTENT" ]; then
 fi
 
 # =============================================================================
-# ÉTAPE 1 : INSTALLATION DES DÉPENDANCES
+# ETAPE 1 : INSTALLATION DES DEPENDANCES
 # =============================================================================
 install_dependencies() {
-    log "📦 Vérification des dépendances..."
+    log "Verification des dependances..."
     
-    # Vérifier si TTS est déjà installé et fonctionnel
+    # Verifier si TTS est deja installe et fonctionnel
     if python3 -c "from TTS.api import TTS; print('OK')" 2>/dev/null | grep -q "OK"; then
-        log "✅ CoquiTTS déjà installé"
+        log "CoquiTTS deja installe"
         return 0
     fi
     
-    log "📦 Installation des dépendances système..."
+    log "Installation des dependances systeme..."
     apt-get update -qq
     apt-get install -y -qq ffmpeg curl > /dev/null 2>&1
     
-    log "📦 Installation de gdown..."
+    log "Installation de gdown..."
     pip install -q gdown
     
-    log "📦 Installation de CoquiTTS (peut prendre quelques minutes)..."
+    log "Installation de CoquiTTS (peut prendre quelques minutes)..."
     
-    # Installer avec les bonnes versions pour éviter les conflits
+    # Installer avec les bonnes versions pour eviter les conflits
     pip install torch==2.5.1 torchaudio==2.5.1 --break-system-packages -q 2>/dev/null || true
     pip install transformers==4.40.0 tokenizers==0.19.1 --break-system-packages -q 2>/dev/null || true
     pip install TTS --break-system-packages -q 2>/dev/null || \
     pip install TTS --ignore-installed blinker --break-system-packages -q
     
-    log "✅ Installation terminée"
+    log "Installation terminee"
 }
 
 # =============================================================================
-# ÉTAPE 2 : TÉLÉCHARGER LE MODÈLE ET ACCEPTER LA LICENCE
+# ETAPE 2 : TELECHARGER LE MODELE ET ACCEPTER LA LICENCE
 # =============================================================================
 setup_model() {
-    log "🧠 Configuration du modèle XTTS v2..."
+    log "Configuration du modele XTTS v2..."
     
     mkdir -p "$WORK_DIR/audio" "$WORK_DIR/output"
     
-    # Vérifier si le modèle est déjà téléchargé
+    # Verifier si le modele est deja telecharge
     MODEL_DIR="$HOME/.local/share/tts/tts_models--multilingual--multi-dataset--xtts_v2"
     
     if [ -d "$MODEL_DIR" ] && [ -f "$MODEL_DIR/model.pth" ]; then
-        log "✅ Modèle XTTS v2 déjà téléchargé"
+        log "Modele XTTS v2 deja telecharge"
         return 0
     fi
     
-    log "🧠 Téléchargement du modèle XTTS v2 (acceptation automatique de la licence)..."
+    log "Telechargement du modele XTTS v2 (acceptation automatique de la licence)..."
     
-    # Télécharger et accepter la licence automatiquement
+    # Telecharger et accepter la licence automatiquement
     python3 << 'PYTHON_SETUP'
 import os
 os.environ['COQUI_TOS_AGREED'] = '1'
@@ -156,30 +203,30 @@ import torch
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Device: {device}")
 
-# Ceci télécharge le modèle et accepte la licence
+# Ceci telecharge le modele et accepte la licence
 tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
-print("✅ Modèle XTTS v2 prêt")
+print("Modele XTTS v2 pret")
 PYTHON_SETUP
     
-    log "✅ Modèle configuré"
+    log "Modele configure"
 }
 
 # =============================================================================
-# ÉTAPE 3 : TÉLÉCHARGER LA VOIX DE RÉFÉRENCE
+# ETAPE 3 : TELECHARGER LA VOIX DE REFERENCE
 # =============================================================================
 download_voice() {
-    log "🎤 Téléchargement de la voix de référence..."
+    log "Telechargement de la voix de reference..."
     
     VOICE_FILE="$WORK_DIR/audio/voice_reference.wav"
     
     if [ -f "$VOICE_FILE" ]; then
-        log "✅ Voix de référence déjà présente"
+        log "Voix de reference deja presente"
         return 0
     fi
     
-    # Télécharger depuis Google Drive
+    # Telecharger depuis Google Drive
     gdown "https://drive.google.com/uc?id=$VOICE_GDRIVE_ID" -O "$WORK_DIR/audio/voice_raw.mp3" --quiet || \
-    error "Impossible de télécharger la voix depuis Google Drive (ID: $VOICE_GDRIVE_ID)"
+    error "Impossible de telecharger la voix depuis Google Drive (ID: $VOICE_GDRIVE_ID)"
     
     # Convertir en WAV 22050Hz mono (optimal pour XTTS)
     ffmpeg -i "$WORK_DIR/audio/voice_raw.mp3" -ar 22050 -ac 1 "$WORK_DIR/audio/voice_full.wav" -y -loglevel error
@@ -187,16 +234,17 @@ download_voice() {
     # Extraire 30 secondes (suffisant pour clonage)
     ffmpeg -i "$WORK_DIR/audio/voice_full.wav" -t 30 "$VOICE_FILE" -y -loglevel error
     
-    log "✅ Voix de référence prête: $VOICE_FILE"
+    log "Voix de reference prete: $VOICE_FILE"
 }
 
 # =============================================================================
-# ÉTAPE 4 : GÉNÉRER L'AUDIO
+# ETAPE 4 : GENERER L'AUDIO
 # =============================================================================
 generate_audio() {
-    log "🎙️ Génération de l'audio..."
+    log "Generation de l'audio..."
+    log "Parametres: speed=$SPEED, temperature=$TEMPERATURE, top_k=$TOP_K, top_p=$TOP_P"
     
-    # Récupérer le texte
+    # Recuperer le texte
     if [ -n "$TEXT_FILE" ]; then
         if [ ! -f "$TEXT_FILE" ]; then
             error "Fichier texte introuvable: $TEXT_FILE"
@@ -210,7 +258,7 @@ generate_audio() {
     OUTPUT_FINAL="$WORK_DIR/output/generated.$OUTPUT_FORMAT"
     VOICE_FILE="$WORK_DIR/audio/voice_reference.wav"
     
-    # Générer l'audio avec Python
+    # Generer l'audio avec Python
     python3 << PYTHON_GENERATE
 import os
 os.environ['COQUI_TOS_AGREED'] = '1'
@@ -225,40 +273,47 @@ tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2").to(device)
 
 text = '''$SCRIPT_TEXT'''
 
-print(f"Texte à générer ({len(text)} caractères)...")
+print(f"Texte a generer ({len(text)} caracteres)...")
 
 tts.tts_to_file(
     text=text,
     file_path="$OUTPUT_WAV",
     speaker_wav="$VOICE_FILE",
-    language="$LANGUAGE"
+    language="$LANGUAGE",
+    speed=$SPEED,
+    temperature=$TEMPERATURE,
+    top_k=$TOP_K,
+    top_p=$TOP_P,
+    repetition_penalty=$REPETITION_PENALTY,
+    length_penalty=$LENGTH_PENALTY,
+    split_sentences=$SPLIT_SENTENCES
 )
 
-print("✅ Audio généré: $OUTPUT_WAV")
+print("Audio genere: $OUTPUT_WAV")
 PYTHON_GENERATE
     
-    # Convertir en MP3 si demandé
+    # Convertir en MP3 si demande
     if [ "$OUTPUT_FORMAT" = "mp3" ]; then
-        log "🔄 Conversion en MP3..."
+        log "Conversion en MP3..."
         ffmpeg -i "$OUTPUT_WAV" -codec:a libmp3lame -qscale:a 2 "$OUTPUT_FINAL" -y -loglevel error
         rm -f "$OUTPUT_WAV"
     else
         mv "$OUTPUT_WAV" "$OUTPUT_FINAL"
     fi
     
-    log "✅ Audio final: $OUTPUT_FINAL"
+    log "Audio final: $OUTPUT_FINAL"
 }
 
 # =============================================================================
-# ÉTAPE 5 : ENVOYER LE RÉSULTAT
+# ETAPE 5 : ENVOYER LE RESULTAT
 # =============================================================================
 send_result() {
-    log "📤 Envoi du résultat vers $WEBHOOK_URL..."
+    log "Envoi du resultat vers $WEBHOOK_URL..."
     
     OUTPUT_FINAL="$WORK_DIR/output/generated.$OUTPUT_FORMAT"
     FILENAME="generated_$(date +%Y%m%d_%H%M%S).$OUTPUT_FORMAT"
     
-    # Récupérer le texte pour l'envoyer avec
+    # Recuperer le texte pour l'envoyer avec
     if [ -n "$TEXT_FILE" ]; then
         SCRIPT_TEXT=$(cat "$TEXT_FILE")
     else
@@ -270,25 +325,27 @@ send_result() {
         -F "file=@$OUTPUT_FINAL;filename=$FILENAME" \
         -F "filename=$FILENAME" \
         -F "language=$LANGUAGE" \
+        -F "speed=$SPEED" \
+        -F "temperature=$TEMPERATURE" \
         -F "text=$SCRIPT_TEXT")
     
     HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
     BODY=$(echo "$RESPONSE" | head -n -1)
     
     if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-        log "✅ Envoi réussi (HTTP $HTTP_CODE)"
-        log "Réponse: $BODY"
+        log "Envoi reussi (HTTP $HTTP_CODE)"
+        log "Reponse: $BODY"
     else
-        log "⚠️ Envoi terminé avec code HTTP $HTTP_CODE"
-        log "Réponse: $BODY"
+        log "Envoi termine avec code HTTP $HTTP_CODE"
+        log "Reponse: $BODY"
     fi
 }
 
 # =============================================================================
-# EXÉCUTION PRINCIPALE
+# EXECUTION PRINCIPALE
 # =============================================================================
 main() {
-    log "🚀 Démarrage CoquiTTS XTTS v2"
+    log "Demarrage CoquiTTS XTTS v2"
     log "Webhook: $WEBHOOK_URL"
     log "Voice ID: $VOICE_GDRIVE_ID"
     log "Format: $OUTPUT_FORMAT"
@@ -303,7 +360,7 @@ main() {
     generate_audio
     send_result
     
-    log "🎉 Terminé !"
+    log "Termine!"
 }
 
 # Lancer
