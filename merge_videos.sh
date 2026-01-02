@@ -28,7 +28,6 @@ fi
 
 WORK_DIR="/workspace/merge_work"
 RIFE_DIR="/workspace/Practical-RIFE"
-ESRGAN_DIR="/workspace/Real-ESRGAN"
 OUTPUT_DIR="/workspace/output"
 OUTPUT_FILE="$OUTPUT_DIR/${PROJECT_NAME}_final.mp4"
 UPSCALED_FILE="$OUTPUT_DIR/${PROJECT_NAME}_upscaled.mp4"
@@ -39,44 +38,19 @@ mkdir -p "$WORK_DIR/videos" "$WORK_DIR/transitions" "$WORK_DIR/final" "$WORK_DIR
 mkdir -p "$OUTPUT_DIR"
 
 # =============================================================================
-# ÉTAPE 1: INSTALLER RIFE
+# ÉTAPE 1: VÉRIFIER RIFE
 # =============================================================================
-log_step "Installation RIFE..."
+log_step "Vérification RIFE..."
 
 if [ ! -d "$RIFE_DIR" ]; then
-    cd /workspace
-    git clone https://github.com/hzwer/Practical-RIFE.git
-    cd Practical-RIFE
-    pip install -q -r requirements.txt --break-system-packages 2>/dev/null || pip install -q -r requirements.txt
-    mkdir -p train_log
-    wget -q -O train_log/flownet.pkl "https://github.com/hzwer/Practical-RIFE/releases/download/v4.6/flownet.pkl" || true
-    log_info "✅ RIFE installé"
+    log_error "RIFE non installé! Lancez merge_init.sh d'abord."
+    exit 1
 else
-    log_info "✅ RIFE déjà présent"
+    log_info "✅ RIFE présent"
 fi
 
 # =============================================================================
-# ÉTAPE 2: INSTALLER Real-ESRGAN
-# =============================================================================
-log_step "Installation Real-ESRGAN..."
-
-if [ ! -d "$ESRGAN_DIR" ]; then
-    cd /workspace
-    git clone https://github.com/xinntao/Real-ESRGAN.git
-    cd Real-ESRGAN
-    pip install -q basicsr gfpgan --break-system-packages 2>/dev/null || pip install -q basicsr gfpgan
-    pip install -q -r requirements.txt --break-system-packages 2>/dev/null || pip install -q -r requirements.txt
-    python setup.py develop --quiet 2>/dev/null || python setup.py develop
-    
-    # Télécharger le modèle vidéo
-    wget -q -O weights/realesr-animevideov3.pth "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-animevideov3.pth"
-    log_info "✅ Real-ESRGAN installé"
-else
-    log_info "✅ Real-ESRGAN déjà présent"
-fi
-
-# =============================================================================
-# ÉTAPE 3: TÉLÉCHARGER LES VIDÉOS
+# ÉTAPE 2: TÉLÉCHARGER LES VIDÉOS
 # =============================================================================
 log_step "Téléchargement des vidéos..."
 
@@ -118,7 +92,7 @@ if [ "$NUM_VIDEOS" -eq 0 ]; then
 fi
 
 # =============================================================================
-# ÉTAPE 4: GÉNÉRER LES TRANSITIONS RIFE
+# ÉTAPE 3: GÉNÉRER LES TRANSITIONS RIFE
 # =============================================================================
 if [ "$NUM_VIDEOS" -gt 1 ]; then
     log_step "Génération des transitions RIFE..."
@@ -139,7 +113,7 @@ if [ "$NUM_VIDEOS" -gt 1 ]; then
             -frames:v 1 -update 1 "$WORK_DIR/transitions/frame_${next}_first.png" 2>/dev/null
         
         rm -f output/*.png 2>/dev/null || true
-        python inference_img.py \
+        python3 inference_img.py \
             --img "$WORK_DIR/transitions/frame_${curr}_last.png" \
                   "$WORK_DIR/transitions/frame_${next}_first.png" \
             --exp=3 2>/dev/null
@@ -158,7 +132,7 @@ else
 fi
 
 # =============================================================================
-# ÉTAPE 5: ASSEMBLAGE
+# ÉTAPE 4: ASSEMBLAGE
 # =============================================================================
 if [ "$NUM_VIDEOS" -gt 1 ]; then
     log_step "Assemblage..."
@@ -188,38 +162,42 @@ OUTPUT_SIZE=$(stat -c%s "$OUTPUT_FILE")
 log_info "✅ Vidéo assemblée: $OUTPUT_FILE ($(numfmt --to=iec $OUTPUT_SIZE))"
 
 # =============================================================================
-# ÉTAPE 6: UPSCALE x4 (Real-ESRGAN GPU)
+# ÉTAPE 5: UPSCALE x4 (Real-ESRGAN GPU)
 # =============================================================================
 log_step "Upscale x4 (Real-ESRGAN GPU)..."
 
 # Patch basicsr si nécessaire
-sed -i 's/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/' /usr/local/lib/python3.10/dist-packages/basicsr/data/degradations.py 2>/dev/null || true
+BASICSR_FILE="/usr/local/lib/python3.10/dist-packages/basicsr/data/degradations.py"
+if [ -f "$BASICSR_FILE" ]; then
+    sed -i 's/from torchvision.transforms.functional_tensor import rgb_to_grayscale/from torchvision.transforms.functional import rgb_to_grayscale/' "$BASICSR_FILE" 2>/dev/null || true
+fi
 
 # Installer realesrgan si pas présent
-pip3 show realesrgan > /dev/null 2>&1 || pip3 install realesrgan --no-deps
+pip3 show realesrgan > /dev/null 2>&1 || pip3 install realesrgan --no-deps 2>/dev/null
 
 # Télécharger le modèle si pas présent
 mkdir -p /workspace/Real-ESRGAN/weights
 if [ ! -f "/workspace/Real-ESRGAN/weights/RealESRGAN_x4plus.pth" ]; then
+    log_info "Téléchargement modèle RealESRGAN..."
     wget -q -O /workspace/Real-ESRGAN/weights/RealESRGAN_x4plus.pth "https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth"
 fi
 
 # Extraire les frames
 log_info "Extraction des frames..."
-mkdir -p "$WORK_DIR/frames" "$WORK_DIR/frames_up"
 ffmpeg -i "$OUTPUT_FILE" -qscale:v 1 -qmin 1 -qmax 1 -vsync 0 "$WORK_DIR/frames/frame%08d.png" 2>/dev/null
 
 FRAME_COUNT=$(ls -1 "$WORK_DIR/frames"/*.png 2>/dev/null | wc -l)
 log_info "  $FRAME_COUNT frames extraites"
 
 # Upscale avec Python/CUDA
-log_info "Upscale des frames (GPU)..."
+log_info "Upscale des frames (GPU)... ~$((FRAME_COUNT * 14 / 600)) minutes estimées"
 cd /workspace
-python3 << PYEOF
+python3 << 'PYEOF'
 from realesrgan import RealESRGANer
 from basicsr.archs.rrdbnet_arch import RRDBNet
 import cv2
 import os
+import sys
 
 model = RRDBNet(num_in_ch=3, num_out_ch=3, num_feat=64, num_block=23, num_grow_ch=32, scale=4)
 upsampler = RealESRGANer(
@@ -232,8 +210,8 @@ upsampler = RealESRGANer(
     half=True
 )
 
-frames_dir = '$WORK_DIR/frames'
-output_dir = '$WORK_DIR/frames_up'
+frames_dir = '/workspace/merge_work/frames'
+output_dir = '/workspace/merge_work/frames_up'
 
 frames = sorted([f for f in os.listdir(frames_dir) if f.endswith('.png')])
 total = len(frames)
@@ -243,34 +221,42 @@ for i, frame in enumerate(frames):
     output, _ = upsampler.enhance(img, outscale=4)
     cv2.imwrite(os.path.join(output_dir, frame), output)
     if (i+1) % 100 == 0 or i == total-1:
-        print(f"[{i+1}/{total}] frames upscalées")
+        print(f"[{i+1}/{total}] frames upscalées", flush=True)
 
-print("✅ Upscale terminé")
+print("✅ Upscale terminé", flush=True)
 PYEOF
 
-# Récupérer le FPS original
-ORIGINAL_FPS=$(ffprobe -v error -select_streams v -of default=noprint_wrappers=1:nokey=1 -show_entries stream=r_frame_rate "$OUTPUT_FILE" 2>/dev/null | head -1)
-ORIGINAL_FPS=$(echo "scale=2; $ORIGINAL_FPS" | bc 2>/dev/null || echo "25")
-log_info "  FPS: $ORIGINAL_FPS"
+UPSCALE_OK=$?
 
-# Recréer la vidéo upscalée
-log_info "Reconstruction vidéo..."
-ffmpeg -y -framerate $ORIGINAL_FPS -i "$WORK_DIR/frames_up/frame%08d.png" \
-    -i "$OUTPUT_FILE" -map 0:v -map 1:a? \
-    -c:v libx264 -crf 18 -preset medium -pix_fmt yuv420p \
-    -c:a copy \
-    "$UPSCALED_FILE" 2>/dev/null
+if [ $UPSCALE_OK -eq 0 ]; then
+    # Récupérer le FPS original
+    ORIGINAL_FPS=$(ffprobe -v error -select_streams v -of default=noprint_wrappers=1:nokey=1 -show_entries stream=r_frame_rate "$OUTPUT_FILE" 2>/dev/null | head -1)
+    ORIGINAL_FPS=$(echo "scale=0; $ORIGINAL_FPS" | bc 2>/dev/null || echo "25")
+    log_info "  FPS: $ORIGINAL_FPS"
 
-if [ -f "$UPSCALED_FILE" ] && [ -s "$UPSCALED_FILE" ]; then
-    UPSCALED_SIZE=$(stat -c%s "$UPSCALED_FILE")
-    log_info "✅ Vidéo upscalée: $UPSCALED_FILE ($(numfmt --to=iec $UPSCALED_SIZE))"
-    FINAL_OUTPUT="$UPSCALED_FILE"
+    # Recréer la vidéo upscalée
+    log_info "Reconstruction vidéo..."
+    ffmpeg -y -framerate $ORIGINAL_FPS -i "$WORK_DIR/frames_up/frame%08d.png" \
+        -i "$OUTPUT_FILE" -map 0:v -map 1:a? \
+        -c:v libx264 -crf 18 -preset medium -pix_fmt yuv420p \
+        -c:a copy \
+        "$UPSCALED_FILE" 2>/dev/null
+
+    if [ -f "$UPSCALED_FILE" ] && [ -s "$UPSCALED_FILE" ]; then
+        UPSCALED_SIZE=$(stat -c%s "$UPSCALED_FILE")
+        log_info "✅ Vidéo upscalée: $UPSCALED_FILE ($(numfmt --to=iec $UPSCALED_SIZE))"
+        FINAL_OUTPUT="$UPSCALED_FILE"
+    else
+        log_error "❌ Reconstruction échouée, utilisation vidéo non-upscalée"
+        FINAL_OUTPUT="$OUTPUT_FILE"
+    fi
 else
-    log_error "❌ Upscale échoué, utilisation de la vidéo non-upscalée"
+    log_error "❌ Upscale échoué, utilisation vidéo non-upscalée"
     FINAL_OUTPUT="$OUTPUT_FILE"
 fi
+
 # =============================================================================
-# ÉTAPE 7: ENVOYER AU WEBHOOK
+# ÉTAPE 6: ENVOYER AU WEBHOOK
 # =============================================================================
 if [ -n "$WEBHOOK_URL" ]; then
     log_step "Envoi vidéo au webhook..."
@@ -288,7 +274,7 @@ if [ -n "$WEBHOOK_URL" ]; then
 fi
 
 # =============================================================================
-# ÉTAPE 8: CLEANUP
+# ÉTAPE 7: CLEANUP
 # =============================================================================
 log_step "Nettoyage..."
 rm -rf "$WORK_DIR"
