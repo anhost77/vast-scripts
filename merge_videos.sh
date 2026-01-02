@@ -3,7 +3,7 @@
 # MERGE VIDEOS - Fusion avec transitions RIFE + Upload webhook
 # =============================================================================
 
-set -e
+#set -e
 
 PROJECT_NAME="$1"
 VIDEO_URLS="$2"  # URLs séparées par des virgules
