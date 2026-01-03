@@ -291,7 +291,7 @@ tts.tts_to_file(
     temperature=$TEMPERATURE,
     top_k=$TOP_K,
     top_p=$TOP_P,
-    repetition_penalty=$REPETITION_PENALTY,
+    repetition_penalty=float($REPETITION_PENALTY),
     length_penalty=$LENGTH_PENALTY,
     split_sentences=$SPLIT_SENTENCES
 )
