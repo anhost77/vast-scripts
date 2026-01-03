@@ -166,10 +166,9 @@ install_dependencies() {
     log "Installation de CoquiTTS (peut prendre quelques minutes)..."
     
     # Installer avec les bonnes versions pour eviter les conflits
-    pip install torch==2.5.1 torchaudio==2.5.1 --break-system-packages -q 2>/dev/null || true
-    pip install transformers==4.40.0 tokenizers==0.19.1 --break-system-packages -q 2>/dev/null || true
-    pip install TTS --break-system-packages -q 2>/dev/null || \
-    pip install TTS --ignore-installed blinker --break-system-packages -q
+    pip install torch==2.5.1 torchaudio==2.5.1 -q 2>/dev/null || true
+    pip install transformers==4.40.0 tokenizers==0.19.1 -q 2>/dev/null || true
+    pip install TTS -q 2>/dev/null || pip install TTS --ignore-installed blinker -q
     
     log "Installation terminee"
 }
