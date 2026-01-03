@@ -8,6 +8,8 @@
 # =============================================================================
 
 set -e
+# Accepter la licence Coqui automatiquement
+export COQUI_TOS_AGREED=1
 
 # =============================================================================
 # CONFIGURATION PAR DEFAUT
@@ -150,8 +152,11 @@ fi
 install_dependencies() {
     log "Verification des dependances..."
     
+    # Accepter la licence Coqui automatiquement
+    export COQUI_TOS_AGREED=1
+    
     # Verifier si TTS est deja installe et fonctionnel
-    if python3 -c "from TTS.api import TTS; print('OK')" 2>/dev/null | grep -q "OK"; then
+    if python3 -c "import os; os.environ['COQUI_TOS_AGREED']='1'; from TTS.api import TTS; print('OK')" 2>/dev/null | grep -q "OK"; then
         log "CoquiTTS deja installe"
         return 0
     fi
@@ -165,7 +170,7 @@ install_dependencies() {
     
     log "Installation de CoquiTTS (peut prendre quelques minutes)..."
     
-    # Installer avec les bonnes versions pour eviter les conflits
+    # Installer avec les bonnes versions
     pip install torch==2.5.1 torchaudio==2.5.1 -q 2>/dev/null || true
     pip install transformers==4.40.0 tokenizers==0.19.1 -q 2>/dev/null || true
     pip install TTS -q 2>/dev/null || pip install TTS --ignore-installed blinker -q
